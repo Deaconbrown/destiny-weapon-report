@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { ensureManifestCache, getWeapons } from "./bungie.js";
+import { ensureManifestCache, getWeapons, getWeaponDetail } from "./bungie.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -35,6 +35,21 @@ app.get("/api/weapons", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load weapons" });
+  }
+});
+
+app.get("/api/weapons/:hash", async (req, res) => {
+  try {
+    const hash = Number(req.params.hash);
+    if (!Number.isInteger(hash)) return res.status(400).json({ error: "Invalid weapon hash" });
+
+    const weapon = await getWeaponDetail(hash);
+    if (!weapon) return res.status(404).json({ error: "Weapon not found" });
+
+    res.json(weapon);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load weapon detail" });
   }
 });
 

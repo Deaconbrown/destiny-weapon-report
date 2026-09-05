@@ -74,6 +74,13 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+.weapon-card:hover {
+  border-color: #4a5160;
 }
 
 .weapon-card img {
@@ -108,4 +115,156 @@ body {
   padding: 2px 8px;
   border-radius: 999px;
   color: #c7cbd4;
+}
+
+.tier-tag {
+  background: transparent;
+  font-weight: 600;
+}
+
+.back-link {
+  display: inline-block;
+  color: #9aa1ac;
+  text-decoration: none;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.back-link:hover {
+  color: #e6e8ec;
+}
+
+.detail-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.detail-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  background: #161920;
+  flex-shrink: 0;
+}
+
+.detail-header h1 {
+  margin: 0 0 4px;
+}
+
+.flavor-text {
+  font-style: italic;
+  color: #9aa1ac;
+  border-left: 2px solid #323744;
+  padding-left: 12px;
+  margin: 16px 0;
+}
+
+.detail-screenshot {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.detail-section {
+  margin-top: 32px;
+}
+
+.detail-section h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #898781;
+  margin-bottom: 12px;
+}
+
+/* Stat meters — sequential single-hue fill, lighter step of the same ramp as the track,
+   per the dataviz meter spec (accent fill, state reads across the whole bar). */
+.stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.stat-name {
+  color: #c3c2b7;
+}
+
+.stat-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #1c355e;
+  overflow: hidden;
+}
+
+.stat-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #3987e5;
+}
+
+.stat-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #e6e8ec;
+}
+
+.stat-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.stat-info-chip {
+  font-size: 12px;
+  color: #9aa1ac;
+  background: #161920;
+  border: 1px solid #2c3038;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.stat-info-chip strong {
+  color: #e6e8ec;
+}
+
+.perk-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.perk-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #161920;
+  border: 1px solid #2c3038;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.perk img {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: #0d0f14;
+  flex-shrink: 0;
 }
