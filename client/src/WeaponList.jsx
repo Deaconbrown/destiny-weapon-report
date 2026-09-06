@@ -9,28 +9,31 @@ import WeaponTypeIcon from "./weaponTypeIcons.jsx";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 function GridCard({ w }) {
+  const tint = tierColor(w.tierType);
   return (
-    <Link className="weapon-card" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
-      <div className="card-icon-wrap">
+    <Link className="weapon-card" style={{ borderColor: tint }} to={`/weapon/${w.hash}/${slugify(w.name)}`}>
+      <div className="card-icon-square" style={{ backgroundColor: `${tint}26` }}>
         {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
-        {w.tierStars && <TierStars count={w.tierStars} size={9} />}
+        {w.tierStars && <div className="card-stars"><TierStars count={w.tierStars} size={8} /></div>}
       </div>
-      <div className="weapon-info">
-        <h3>{w.name}</h3>
-        <p className="weapon-type">{w.weaponCategory}</p>
-        <div className="weapon-tags">
-          <span className="tag tier-tag" style={{ borderColor: tierColor(w.tierType), color: tierColor(w.tierType) }}>
-            {w.tierType}
+      <h3 className="card-name">{w.name}</h3>
+      <div className="card-meta">
+        {w.damageType && (
+          <span className="card-meta-item" style={{ color: damageColor(w.damageType) }}>
+            <span className="card-damage-dot" style={{ backgroundColor: damageColor(w.damageType) }} />
+            {w.damageType}
           </span>
-          {w.damageType && (
-            <span className="tag" style={{ borderColor: damageColor(w.damageType), color: damageColor(w.damageType) }}>
-              {w.damageType}
-            </span>
-          )}
-          <span className="tag">{w.ammoType}</span>
-          {w.season != null && <span className="tag">S{w.season}</span>}
-        </div>
+        )}
+        <span className="card-meta-item">{w.ammoType}</span>
+        {w.championIcon && <img className="card-champion-icon" src={w.championIcon} alt={w.championName ?? ""} title={w.championName ?? ""} />}
+        {w.season != null && <span className="card-meta-item card-meta-muted">S{w.season}</span>}
       </div>
+      {w.frameName && (
+        <div className="card-frame">
+          {w.frameIcon && <img src={w.frameIcon} alt="" />}
+          {w.frameName}
+        </div>
+      )}
     </Link>
   );
 }

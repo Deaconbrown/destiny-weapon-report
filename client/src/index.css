@@ -181,18 +181,17 @@ body {
 
 .weapon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 12px;
 }
 
 .weapon-card {
   background: #161920;
   border: 1px solid #2c3038;
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px;
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s;
@@ -202,19 +201,27 @@ body {
   border-color: #4a5160;
 }
 
-.card-icon-wrap {
-  flex-shrink: 0;
+.card-icon-square {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.card-icon-wrap img {
-  width: 56px;
-  height: 56px;
-  border-radius: 6px;
-  background: #0d0f14;
+.card-icon-square img {
+  width: 82%;
+  height: 82%;
+  object-fit: contain;
+}
+
+.card-stars {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
 }
 
 .tier-stars {
@@ -222,9 +229,64 @@ body {
   gap: 1px;
 }
 
-.weapon-info h3 {
-  margin: 0 0 4px;
-  font-size: 15px;
+.card-name {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #9aa1ac;
+}
+
+.card-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-meta-muted {
+  color: #6b7280;
+}
+
+.card-damage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.card-champion-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.card-frame {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9aa1ac;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-frame img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .weapon-type {
