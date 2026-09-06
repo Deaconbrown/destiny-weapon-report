@@ -14,7 +14,10 @@ function GridCard({ w }) {
     <Link className="weapon-card" style={{ borderColor: tint }} to={`/weapon/${w.hash}/${slugify(w.name)}`}>
       <div className="card-icon-square" style={{ backgroundColor: `${tint}26` }}>
         {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
-        {w.tierStars && <div className="card-stars"><TierStars count={w.tierStars} size={8} /></div>}
+        <div className="card-badges">
+          {w.season != null && <span className="card-season-badge">S{w.season}</span>}
+          {w.tierStars && <TierStars count={w.tierStars} size={8} />}
+        </div>
       </div>
       <h3 className="card-name">{w.name}</h3>
       <div className="card-meta">
@@ -25,7 +28,6 @@ function GridCard({ w }) {
         )}
         <span className="card-meta-item">{w.ammoType}</span>
         {w.championIcon && <img className="card-champion-icon" src={w.championIcon} alt={w.championName ?? ""} title={w.championName ?? ""} />}
-        {w.season != null && <span className="card-meta-item card-meta-muted">S{w.season}</span>}
       </div>
       {w.frameName && (
         <div className="card-frame">

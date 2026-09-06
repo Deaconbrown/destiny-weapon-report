@@ -218,16 +218,28 @@ body {
   object-fit: contain;
 }
 
-.card-stars {
+.card-badges {
   position: absolute;
   top: 4px;
   left: 4px;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.card-stars .tier-stars {
+.card-badges .tier-stars {
   flex-direction: column;
   gap: 1px;
+}
+
+.card-season-badge {
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(10, 12, 16, 0.85);
+  color: #e6e8ec;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .tier-stars {
