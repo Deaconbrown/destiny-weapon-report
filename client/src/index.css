@@ -71,14 +71,14 @@ body {
   display: flex;
   flex-direction: column;
   border-top: 1px solid #2c3038;
-  width: fit-content;
-  max-width: 100%;
+  width: 100%;
 }
 
 .weapon-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 8px 30px 36px 1fr 1fr 1fr;
   align-items: center;
-  gap: 12px;
+  column-gap: 16px;
   padding: 7px 6px;
   border-bottom: 1px solid #2c3038;
   text-decoration: none;
@@ -124,25 +124,26 @@ body {
 }
 
 .row-name {
-  flex: 0 1 auto;
-  max-width: 260px;
   font-size: 13px;
   font-weight: 600;
   color: #e6e8ec;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .row-type,
 .row-frame {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
   color: #e6e8ec;
   font-size: 13px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .row-type-icon {
@@ -150,15 +151,10 @@ body {
   opacity: 0.85;
 }
 
-.row-champion {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-}
-
 .row-champion-icon {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
 }
 
 .row-frame-icon {

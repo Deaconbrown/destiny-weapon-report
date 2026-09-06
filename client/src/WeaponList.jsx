@@ -48,10 +48,8 @@ function ListRow({ w }) {
         <WeaponTypeIcon type={w.itemTypeDisplayName} className="row-type-icon" />
         {w.itemTypeDisplayName}
       </span>
-      <span className="row-champion">
-        {w.championIcon && <img className="row-champion-icon" src={w.championIcon} alt={w.championName ?? ""} title={w.championName ?? ""} />}
-      </span>
       <span className="row-frame">
+        {w.championIcon && <img className="row-champion-icon" src={w.championIcon} alt={w.championName ?? ""} title={w.championName ?? ""} />}
         {w.frameIcon ? <img className="row-frame-icon" src={w.frameIcon} alt="" /> : null}
         {w.frameName}
       </span>
