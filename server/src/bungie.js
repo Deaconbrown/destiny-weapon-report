@@ -14,7 +14,15 @@ const TABLES = {
   plugSets: "DestinyPlugSetDefinition",
   socketCategories: "DestinySocketCategoryDefinition",
   breakerTypes: "DestinyBreakerTypeDefinition",
+  sandboxPerks: "DestinySandboxPerkDefinition",
 };
+
+// As of the 2026 champion-mod overhaul, anti-Champion capability is intrinsic to every
+// weapon's frame (no Artifact mod needed) — encoded as a hidden sandbox perk on the frame
+// plug item, named like "[Disruption] Overload". Maps the bracketed tag to the matching
+// DestinyBreakerTypeDefinition enumValue for its icon.
+const CHAMPION_TAG_TO_ENUM = { "Shield-Piercing": 1, "Disruption": 2, "Stagger": 3 };
+const CHAMPION_PERK_PATTERN = /^\[(Shield-Piercing|Disruption|Stagger)\]\s*(.+)$/;
 
 const AMMO_TYPE_LABELS = { 0: "None", 1: "Primary", 2: "Special", 3: "Heavy" };
 const WEAPON_ITEM_TYPE = 3;
@@ -188,7 +196,7 @@ function iconUrl(icon) {
   return icon ? `https://www.bungie.net${icon}` : null;
 }
 
-function frameForItem(item, itemDefs, socketCategoryDefs) {
+function findIntrinsicFrame(item, itemDefs, socketCategoryDefs) {
   const categories = item.sockets?.socketCategories ?? [];
   const entries = item.sockets?.socketEntries ?? [];
 
@@ -197,28 +205,29 @@ function frameForItem(item, itemDefs, socketCategoryDefs) {
     if (categoryName !== "INTRINSIC TRAITS") continue;
 
     const entry = entries[category.socketIndexes[0]];
-    const frameItem = entry?.singleInitialItemHash ? itemDefs[entry.singleInitialItemHash] : null;
-    return {
-      frameName: frameItem?.displayProperties?.name ?? null,
-      frameIcon: iconUrl(frameItem?.displayProperties?.icon),
-    };
+    return entry?.singleInitialItemHash ? itemDefs[entry.singleInitialItemHash] : null;
   }
-  return { frameName: null, frameIcon: null };
+  return null;
 }
 
-function championInfo(item, breakerTypeDefs) {
-  if (!item.breakerType) return { championName: null, championIcon: null };
-  const def = Object.values(breakerTypeDefs).find((b) => b.enumValue === item.breakerType);
-  return {
-    championName: def?.displayProperties?.name ?? null,
-    championIcon: iconUrl(def?.displayProperties?.icon),
-  };
+function championInfoFromFrame(frameItem, sandboxPerkDefs, breakerTypeDefs) {
+  for (const p of frameItem?.perks ?? []) {
+    const perkDef = sandboxPerkDefs[p.perkHash];
+    const match = CHAMPION_PERK_PATTERN.exec(perkDef?.displayProperties?.name ?? "");
+    if (!match) continue;
+
+    const enumValue = CHAMPION_TAG_TO_ENUM[match[1]];
+    const breakerDef = Object.values(breakerTypeDefs).find((b) => b.enumValue === enumValue);
+    return { championName: match[2], championIcon: iconUrl(breakerDef?.displayProperties?.icon) };
+  }
+  return { championName: null, championIcon: null };
 }
 
-function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, breakerTypeDefs) {
+function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, breakerTypeDefs, sandboxPerkDefs) {
   const damageTypeHash = item.defaultDamageTypeHash ?? item.damageTypeHashes?.[0];
   const damageType = damageTypeHash ? damageTypeDefs[damageTypeHash] : null;
   const ammoTypeValue = item.equippingBlock?.ammoType ?? 0;
+  const frameItem = findIntrinsicFrame(item, itemDefs, socketCategoryDefs);
 
   return {
     hash: item.hash,
@@ -228,8 +237,9 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, b
     flavorText: item.flavorText ?? "",
     itemTypeDisplayName: item.itemTypeDisplayName ?? "",
     weaponCategory: item.itemTypeAndTierDisplayName ?? item.itemTypeDisplayName ?? "",
-    ...frameForItem(item, itemDefs, socketCategoryDefs),
-    ...championInfo(item, breakerTypeDefs),
+    frameName: frameItem?.displayProperties?.name ?? null,
+    frameIcon: iconUrl(frameItem?.displayProperties?.icon),
+    ...championInfoFromFrame(frameItem, sandboxPerkDefs, breakerTypeDefs),
     damageType: damageType?.displayProperties?.name ?? null,
     damageTypeIcon: iconUrl(damageType?.displayProperties?.icon),
     ammoType: AMMO_TYPE_LABELS[ammoTypeValue] ?? "Unknown",
@@ -243,11 +253,11 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, b
 export async function getWeapons() {
   if (weaponsCache) return weaponsCache;
 
-  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories, breakerTypes } = await loadTables();
+  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
 
   const weapons = Object.values(itemDefs)
     .filter((item) => item.itemType === WEAPON_ITEM_TYPE && !item.redacted && !item.blacklisted && item.displayProperties?.name)
-    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes));
+    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes, sandboxPerks));
 
   weaponsCache = weapons;
   return weapons;
@@ -431,7 +441,7 @@ function resolveSelections(sockets, selectedHashes) {
 }
 
 export async function getWeaponDetail(hash, selectedHashes = []) {
-  const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories, breakerTypes } = await loadTables();
+  const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
 
   const item = itemDefs[hash];
   if (!item || item.itemType !== WEAPON_ITEM_TYPE) return null;
@@ -446,7 +456,7 @@ export async function getWeaponDetail(hash, selectedHashes = []) {
   }));
 
   return {
-    ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories, breakerTypes),
+    ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories, breakerTypes, sandboxPerks),
     stats: buildStats(item, statDefs, statGroupDefs, statDeltas),
     sockets: socketsWithSelection,
   };

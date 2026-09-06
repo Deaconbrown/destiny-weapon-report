@@ -255,6 +255,17 @@ body {
   font-weight: 600;
 }
 
+.tag-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tag-with-icon img {
+  width: 13px;
+  height: 13px;
+}
+
 .back-link {
   display: inline-block;
   color: #9aa1ac;

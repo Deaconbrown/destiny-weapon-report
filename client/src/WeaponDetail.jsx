@@ -156,6 +156,12 @@ export default function WeaponDetail() {
                 {weapon.damageType}
               </span>
             )}
+            {weapon.championName && (
+              <span className="tag tag-with-icon">
+                {weapon.championIcon && <img src={weapon.championIcon} alt="" />}
+                {weapon.championName}
+              </span>
+            )}
             <span className="tag">{weapon.ammoType}</span>
             {weapon.frameName && <span className="tag">{weapon.frameName}</span>}
             <span className="tag tier-tag" style={{ borderColor: tierColor(weapon.tierType), color: tierColor(weapon.tierType) }}>
