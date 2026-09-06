@@ -187,7 +187,7 @@ function iconUrl(icon) {
   return icon ? `https://www.bungie.net${icon}` : null;
 }
 
-function frameNameForItem(item, itemDefs, socketCategoryDefs) {
+function frameForItem(item, itemDefs, socketCategoryDefs) {
   const categories = item.sockets?.socketCategories ?? [];
   const entries = item.sockets?.socketEntries ?? [];
 
@@ -197,9 +197,12 @@ function frameNameForItem(item, itemDefs, socketCategoryDefs) {
 
     const entry = entries[category.socketIndexes[0]];
     const frameItem = entry?.singleInitialItemHash ? itemDefs[entry.singleInitialItemHash] : null;
-    return frameItem?.displayProperties?.name ?? null;
+    return {
+      frameName: frameItem?.displayProperties?.name ?? null,
+      frameIcon: iconUrl(frameItem?.displayProperties?.icon),
+    };
   }
-  return null;
+  return { frameName: null, frameIcon: null };
 }
 
 function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
@@ -215,7 +218,7 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
     flavorText: item.flavorText ?? "",
     itemTypeDisplayName: item.itemTypeDisplayName ?? "",
     weaponCategory: item.itemTypeAndTierDisplayName ?? item.itemTypeDisplayName ?? "",
-    frameName: frameNameForItem(item, itemDefs, socketCategoryDefs),
+    ...frameForItem(item, itemDefs, socketCategoryDefs),
     damageType: damageType?.displayProperties?.name ?? null,
     damageTypeIcon: iconUrl(damageType?.displayProperties?.icon),
     ammoType: AMMO_TYPE_LABELS[ammoTypeValue] ?? "Unknown",

@@ -4,6 +4,7 @@ import { tierColor } from "./tiers.js";
 import { damageColor } from "./damageTypes.js";
 import { slugify } from "./slug.js";
 import TierStars from "./TierStars.jsx";
+import WeaponTypeIcon from "./weaponTypeIcons.jsx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
@@ -39,10 +40,18 @@ function ListRow({ w }) {
     <Link className="weapon-row" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
       <span className="row-damage-dot" style={{ backgroundColor: damageColor(w.damageType) }} title={w.damageType ?? ""} />
       <span className="row-season">{w.season != null ? `S${w.season}` : ""}</span>
-      {w.icon && <img className="row-icon" src={w.icon} alt={w.name} loading="lazy" />}
+      <span className="row-icon-box">
+        {w.icon ? <img className="row-icon" src={w.icon} alt={w.name} loading="lazy" /> : null}
+      </span>
       <span className="row-name">{w.name}</span>
-      <span className="row-type">{w.itemTypeDisplayName}</span>
-      <span className="row-frame">{w.frameName}</span>
+      <span className="row-type">
+        <WeaponTypeIcon type={w.itemTypeDisplayName} className="row-type-icon" />
+        {w.itemTypeDisplayName}
+      </span>
+      <span className="row-frame">
+        {w.frameIcon ? <img className="row-frame-icon" src={w.frameIcon} alt="" /> : null}
+        {w.frameName}
+      </span>
     </Link>
   );
 }

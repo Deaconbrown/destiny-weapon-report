@@ -73,12 +73,17 @@ body {
   border-top: 1px solid #2c3038;
 }
 
+.weapon-list {
+  width: fit-content;
+  max-width: 100%;
+}
+
 .weapon-row {
   display: grid;
-  grid-template-columns: 10px 34px 40px 1fr 140px 200px;
+  grid-template-columns: 8px 30px 36px 220px 140px 220px;
   align-items: center;
-  gap: 12px;
-  padding: 8px 6px;
+  gap: 10px;
+  padding: 7px 6px;
   border-bottom: 1px solid #2c3038;
   text-decoration: none;
   color: #e6e8ec;
@@ -93,6 +98,7 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .row-season {
@@ -101,24 +107,55 @@ body {
   font-weight: 600;
 }
 
+.row-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #161920;
+  border: 1px solid #2c3038;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .row-icon {
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  background: #0d0f14;
+  display: block;
 }
 
 .row-name {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row-type,
 .row-frame {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: #9aa1ac;
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.row-type-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.row-frame-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: #0d0f14;
 }
 
 .status {
