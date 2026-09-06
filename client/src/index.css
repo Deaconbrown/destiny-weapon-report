@@ -234,10 +234,12 @@ body {
 }
 
 .card-season-badge {
-  width: 16px;
-  height: 16px;
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(10, 12, 16, 0.85);
+  color: #e6e8ec;
+  padding: 1px 4px;
   border-radius: 3px;
-  background: rgba(10, 12, 16, 0.6);
 }
 
 .tier-stars {

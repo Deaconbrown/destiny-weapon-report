@@ -15,7 +15,7 @@ function GridCard({ w }) {
       <div className="card-icon-square" style={{ backgroundColor: `${tint}26` }}>
         {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
         <div className="card-badges">
-          {w.seasonIcon && <img className="card-season-badge" src={w.seasonIcon} alt={w.season != null ? `Season ${w.season}` : ""} title={w.season != null ? `Season ${w.season}` : ""} />}
+          {w.season != null && <span className="card-season-badge">S{w.season}</span>}
           {w.tierStars && <TierStars count={w.tierStars} size={8} />}
         </div>
       </div>
