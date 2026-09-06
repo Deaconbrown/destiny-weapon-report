@@ -18,10 +18,9 @@ function GridCard({ w }) {
       </div>
       <h3 className="card-name">{w.name}</h3>
       <div className="card-meta">
-        {w.damageType && (
-          <span className="card-meta-item" style={{ color: damageColor(w.damageType) }}>
-            <span className="card-damage-dot" style={{ backgroundColor: damageColor(w.damageType) }} />
-            {w.damageType}
+        {w.damageTypeIcon && (
+          <span className="card-damage-badge" style={{ backgroundColor: damageColor(w.damageType) }} title={w.damageType ?? ""}>
+            <img src={w.damageTypeIcon} alt={w.damageType ?? ""} />
           </span>
         )}
         <span className="card-meta-item">{w.ammoType}</span>
