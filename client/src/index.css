@@ -224,8 +224,8 @@ body {
   left: 4px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: center;
+  gap: 3px;
 }
 
 .card-badges .tier-stars {
@@ -234,12 +234,10 @@ body {
 }
 
 .card-season-badge {
-  font-size: 9px;
-  font-weight: 700;
-  background: rgba(10, 12, 16, 0.85);
-  color: #e6e8ec;
-  padding: 1px 4px;
+  width: 16px;
+  height: 16px;
   border-radius: 3px;
+  background: rgba(10, 12, 16, 0.6);
 }
 
 .tier-stars {

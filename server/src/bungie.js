@@ -246,6 +246,7 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, b
     tierType: item.inventory?.tierTypeName ?? "",
     isWeapon: item.itemType === WEAPON_ITEM_TYPE,
     season: seasonForItem(item),
+    seasonIcon: iconUrl(item.iconWatermark ?? item.iconWatermarkShelved),
     tierStars: TIER_STAR_ELIGIBLE.has(item.inventory?.tierTypeName) ? 5 : null,
   };
 }
