@@ -13,6 +13,7 @@ const TABLES = {
   statGroupDefs: "DestinyStatGroupDefinition",
   plugSets: "DestinyPlugSetDefinition",
   socketCategories: "DestinySocketCategoryDefinition",
+  breakerTypes: "DestinyBreakerTypeDefinition",
 };
 
 const AMMO_TYPE_LABELS = { 0: "None", 1: "Primary", 2: "Special", 3: "Heavy" };
@@ -205,7 +206,16 @@ function frameForItem(item, itemDefs, socketCategoryDefs) {
   return { frameName: null, frameIcon: null };
 }
 
-function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
+function championInfo(item, breakerTypeDefs) {
+  if (!item.breakerType) return { championName: null, championIcon: null };
+  const def = Object.values(breakerTypeDefs).find((b) => b.enumValue === item.breakerType);
+  return {
+    championName: def?.displayProperties?.name ?? null,
+    championIcon: iconUrl(def?.displayProperties?.icon),
+  };
+}
+
+function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, breakerTypeDefs) {
   const damageTypeHash = item.defaultDamageTypeHash ?? item.damageTypeHashes?.[0];
   const damageType = damageTypeHash ? damageTypeDefs[damageTypeHash] : null;
   const ammoTypeValue = item.equippingBlock?.ammoType ?? 0;
@@ -219,6 +229,7 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
     itemTypeDisplayName: item.itemTypeDisplayName ?? "",
     weaponCategory: item.itemTypeAndTierDisplayName ?? item.itemTypeDisplayName ?? "",
     ...frameForItem(item, itemDefs, socketCategoryDefs),
+    ...championInfo(item, breakerTypeDefs),
     damageType: damageType?.displayProperties?.name ?? null,
     damageTypeIcon: iconUrl(damageType?.displayProperties?.icon),
     ammoType: AMMO_TYPE_LABELS[ammoTypeValue] ?? "Unknown",
@@ -232,11 +243,11 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
 export async function getWeapons() {
   if (weaponsCache) return weaponsCache;
 
-  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories } = await loadTables();
+  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories, breakerTypes } = await loadTables();
 
   const weapons = Object.values(itemDefs)
     .filter((item) => item.itemType === WEAPON_ITEM_TYPE && !item.redacted && !item.blacklisted && item.displayProperties?.name)
-    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories));
+    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes));
 
   weaponsCache = weapons;
   return weapons;
@@ -420,7 +431,7 @@ function resolveSelections(sockets, selectedHashes) {
 }
 
 export async function getWeaponDetail(hash, selectedHashes = []) {
-  const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories } = await loadTables();
+  const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories, breakerTypes } = await loadTables();
 
   const item = itemDefs[hash];
   if (!item || item.itemType !== WEAPON_ITEM_TYPE) return null;
@@ -435,7 +446,7 @@ export async function getWeaponDetail(hash, selectedHashes = []) {
   }));
 
   return {
-    ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories),
+    ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories, breakerTypes),
     stats: buildStats(item, statDefs, statGroupDefs, statDeltas),
     sockets: socketsWithSelection,
   };
