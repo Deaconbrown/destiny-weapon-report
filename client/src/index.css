@@ -221,17 +221,13 @@ body {
 .card-stars {
   position: absolute;
   top: 4px;
-  bottom: 4px;
   left: 4px;
   display: flex;
-  align-items: center;
 }
 
 .card-stars .tier-stars {
   flex-direction: column;
-  justify-content: space-between;
-  height: 100%;
-  gap: 2px;
+  gap: 1px;
 }
 
 .tier-stars {
