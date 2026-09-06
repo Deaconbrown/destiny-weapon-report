@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { ensureManifestCache, getWeapons, getWeaponDetail } from "./bungie.js";
+import { ensureManifestCache, ensureSeasonData, getWeapons, getWeaponDetail } from "./bungie.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -43,7 +43,12 @@ app.get("/api/weapons/:hash", async (req, res) => {
     const hash = Number(req.params.hash);
     if (!Number.isInteger(hash)) return res.status(400).json({ error: "Invalid weapon hash" });
 
-    const weapon = await getWeaponDetail(hash);
+    const selectedHashes = (req.query.perks ?? "")
+      .split(",")
+      .map((h) => Number(h.trim()))
+      .filter(Number.isInteger);
+
+    const weapon = await getWeaponDetail(hash, selectedHashes);
     if (!weapon) return res.status(404).json({ error: "Weapon not found" });
 
     res.json(weapon);
@@ -57,6 +62,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 async function start() {
   await ensureManifestCache(API_KEY);
+  await ensureSeasonData();
   app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 }
 

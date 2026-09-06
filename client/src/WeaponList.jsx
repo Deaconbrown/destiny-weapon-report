@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { tierColor } from "./tiers.js";
 import { slugify } from "./slug.js";
+import TierStars from "./TierStars.jsx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
@@ -81,7 +82,10 @@ export default function WeaponList() {
           <div className="weapon-grid">
             {filtered.map((w) => (
               <Link className="weapon-card" key={w.hash} to={`/weapon/${w.hash}/${slugify(w.name)}`}>
-                {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
+                <div className="card-icon-wrap">
+                  {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
+                  {w.tierStars && <TierStars count={w.tierStars} size={9} />}
+                </div>
                 <div className="weapon-info">
                   <h3>{w.name}</h3>
                   <p className="weapon-type">{w.weaponCategory}</p>
@@ -91,6 +95,7 @@ export default function WeaponList() {
                     </span>
                     {w.damageType && <span className="tag">{w.damageType}</span>}
                     <span className="tag">{w.ammoType}</span>
+                    {w.season != null && <span className="tag">S{w.season}</span>}
                   </div>
                 </div>
               </Link>

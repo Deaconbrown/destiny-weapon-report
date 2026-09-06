@@ -17,9 +17,20 @@ const TABLES = {
 
 const AMMO_TYPE_LABELS = { 0: "None", 1: "Primary", 2: "Special", 3: "Heavy" };
 const WEAPON_ITEM_TYPE = 3;
+const TIER_STAR_ELIGIBLE = new Set(["Legendary"]);
+const EXCLUDED_SOCKET_CATEGORIES = new Set(["weapon cosmetics"]);
+const EMPTY_SOCKET_NAMES = new Set(["Empty Mod Socket", "None", "Random Masterwork", "Tier 1 Weapon"]);
+
+// Community-maintained (MIT license, DIM project) season data. Bungie's live API has no
+// field linking an item back to its release season — watermark icon -> season has far
+// better coverage (shared badge per season) than the direct item-hash table, so it's tried first.
+const WATERMARK_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/watermark-to-season.json";
+const HASH_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/seasons.json";
 
 let weaponsCache = null;
 let tableCache = null;
+let watermarkSeasonsCache = null;
+let hashSeasonsCache = null;
 
 function cachePath(key) {
   return path.join(CACHE_DIR, `${key}.json`);
@@ -88,6 +99,43 @@ export async function ensureManifestCache(apiKey) {
   console.log("Manifest definitions cached.");
 }
 
+export async function ensureSeasonData() {
+  await ensureSeasonsCache();
+}
+
+function seasonForItem(item) {
+  const byWatermark =
+    watermarkSeasonsCache?.[item.iconWatermark] ?? watermarkSeasonsCache?.[item.iconWatermarkShelved];
+  if (byWatermark != null) return byWatermark;
+  return hashSeasonsCache?.[String(item.hash)] ?? null;
+}
+
+async function fetchAndCacheJson(url, cacheKey) {
+  const filePath = cachePath(cacheKey);
+  const cached = await readJsonIfExists(filePath);
+  if (cached) return cached;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed for ${cacheKey}: ${res.status}`);
+  const data = await res.json();
+  await fs.writeFile(filePath, JSON.stringify(data));
+  return data;
+}
+
+async function ensureSeasonsCache() {
+  try {
+    [watermarkSeasonsCache, hashSeasonsCache] = await Promise.all([
+      fetchAndCacheJson(WATERMARK_SEASONS_URL, "watermark_seasons_external"),
+      fetchAndCacheJson(HASH_SEASONS_URL, "hash_seasons_external"),
+    ]);
+    console.log("Season data cached from d2-additional-info.");
+  } catch (err) {
+    console.warn("Could not fetch season data (non-fatal, seasons will show as unknown):", err.message);
+    watermarkSeasonsCache = watermarkSeasonsCache ?? {};
+    hashSeasonsCache = hashSeasonsCache ?? {};
+  }
+}
+
 async function loadTables() {
   if (tableCache) return tableCache;
 
@@ -123,6 +171,8 @@ function mapItemDefinition(item, damageTypeDefs) {
     ammoType: AMMO_TYPE_LABELS[ammoTypeValue] ?? "Unknown",
     tierType: item.inventory?.tierTypeName ?? "",
     isWeapon: item.itemType === WEAPON_ITEM_TYPE,
+    season: seasonForItem(item),
+    tierStars: TIER_STAR_ELIGIBLE.has(item.inventory?.tierTypeName) ? 5 : null,
   };
 }
 
@@ -159,7 +209,7 @@ function interpolateStat(rawValue, points) {
   return rawValue;
 }
 
-function buildStats(item, statDefs, statGroupDefs) {
+function buildStats(item, statDefs, statGroupDefs, statDeltas = new Map()) {
   const rawStats = item.stats?.stats ?? {};
   const statGroup = item.stats?.statGroupHash ? statGroupDefs[item.stats.statGroupHash] : null;
   const scaledStats = statGroup?.scaledStats ?? [];
@@ -175,7 +225,8 @@ function buildStats(item, statDefs, statGroupDefs) {
     const def = statDefs[s.statHash];
     const name = def?.displayProperties?.name;
     if (!name) continue;
-    const raw = rawStats[s.statHash]?.value ?? 0;
+    const baseRaw = rawStats[s.statHash]?.value ?? 0;
+    const raw = baseRaw + (statDeltas.get(s.statHash) ?? 0);
 
     if (s.displayAsNumeric) {
       if (raw > 0) info.push({ statHash: s.statHash, name, value: raw });
@@ -183,7 +234,7 @@ function buildStats(item, statDefs, statGroupDefs) {
       bars.push({
         statHash: s.statHash,
         name,
-        value: interpolateStat(raw, s.displayInterpolation),
+        value: Math.max(0, interpolateStat(raw, s.displayInterpolation)),
         maximumValue: s.maximumValue ?? 100,
       });
     }
@@ -192,10 +243,46 @@ function buildStats(item, statDefs, statGroupDefs) {
   for (const [hash, stat] of Object.entries(rawStats)) {
     if (scaledHashes.has(hash)) continue;
     const name = statDefs[hash]?.displayProperties?.name;
-    if (name && stat.value > 0) info.push({ statHash: Number(hash), name, value: stat.value });
+    const value = stat.value + (statDeltas.get(Number(hash)) ?? 0);
+    if (name && value > 0) info.push({ statHash: Number(hash), name, value });
   }
 
   return { bars, info };
+}
+
+function statDeltaMap(plugItem) {
+  const map = new Map();
+  for (const s of plugItem?.investmentStats ?? []) {
+    map.set(s.statTypeHash, (map.get(s.statTypeHash) ?? 0) + s.value);
+  }
+  return map;
+}
+
+// Masterwork sockets expose the full global catalog (every stat x tiers 1-9, ~150+ options).
+// Since this report shows each weapon's complete/max state, collapse to just the maxed
+// "Masterworked: X" entry per stat rather than every intermediate tier.
+function collapseMasterworkTiers(options) {
+  const hasTiers = options.some((o) => /^Tier \d+:/.test(o.name));
+  if (!hasTiers) return options;
+
+  const seen = new Set();
+  return options.filter((o) => {
+    if (!o.name.startsWith("Masterworked:")) return false;
+    if (seen.has(o.name)) return false;
+    seen.add(o.name);
+    return true;
+  });
+}
+
+// Bungie's plug sets frequently contain duplicate entries for the same perk (distinct
+// hashes for a base unlock vs. an artifact/vendor-unlocked copy) — same name, same effect.
+function dedupeByName(options) {
+  const seen = new Set();
+  return options.filter((o) => {
+    if (seen.has(o.name)) return false;
+    seen.add(o.name);
+    return true;
+  });
 }
 
 function resolvePerkOptions(entry, itemDefs, plugSets) {
@@ -208,15 +295,25 @@ function resolvePerkOptions(entry, itemDefs, plugSets) {
     plugItemHashes = [entry.singleInitialItemHash];
   }
 
-  return plugItemHashes
+  const options = plugItemHashes
     .map((hash) => itemDefs[hash])
     .filter((p) => p?.displayProperties?.name)
-    .map((p) => ({
-      hash: p.hash,
-      name: p.displayProperties.name,
-      icon: iconUrl(p.displayProperties.icon),
-      description: p.displayProperties.description ?? "",
-    }));
+    .map((p) => {
+      const isEnhanced = p.itemTypeDisplayName?.startsWith("Enhanced") ?? false;
+      return {
+        hash: p.hash,
+        name: isEnhanced ? `${p.displayProperties.name} (Enhanced)` : p.displayProperties.name,
+        icon: iconUrl(p.displayProperties.icon),
+        description: p.displayProperties.description ?? "",
+        isDefault: p.hash === entry.singleInitialItemHash,
+        isEnhanced,
+        investmentStats: p.investmentStats ?? [],
+      };
+    });
+
+  const deduped = dedupeByName(collapseMasterworkTiers(options));
+  const meaningful = deduped.filter((o) => !EMPTY_SOCKET_NAMES.has(o.name));
+  return meaningful.length > 0 ? meaningful : deduped;
 }
 
 function buildSockets(item, itemDefs, plugSets, socketCategoryDefs) {
@@ -226,27 +323,66 @@ function buildSockets(item, itemDefs, plugSets, socketCategoryDefs) {
   return categories
     .map((category) => {
       const categoryDef = socketCategoryDefs[category.socketCategoryHash];
+      const categoryName = categoryDef?.displayProperties?.name ?? "Other";
+      if (EXCLUDED_SOCKET_CATEGORIES.has(categoryName.toLowerCase())) return null;
+
       const columns = category.socketIndexes
         .map((index) => ({ index, options: resolvePerkOptions(entries[index], itemDefs, plugSets) }))
         .filter((col) => col.options.length > 0);
+      if (columns.length === 0) return null;
 
-      return {
-        categoryName: categoryDef?.displayProperties?.name ?? "Other",
-        columns,
-      };
+      return { categoryName, columns };
     })
-    .filter((cat) => cat.columns.length > 0);
+    .filter(Boolean);
 }
 
-export async function getWeaponDetail(hash) {
+// For each column, pick the active perk: the one in selectedHashes if it belongs to that
+// column, otherwise the column's default. Returns { activePerkHash per column, statDeltas }.
+function resolveSelections(sockets, selectedHashes) {
+  const selectedSet = new Set(selectedHashes);
+  const statDeltas = new Map();
+  const resolvedColumns = [];
+
+  for (const category of sockets) {
+    for (const column of category.columns) {
+      const defaultOption = column.options.find((o) => o.isDefault) ?? column.options[0];
+      const chosenOption = column.options.find((o) => selectedSet.has(o.hash)) ?? defaultOption;
+
+      resolvedColumns.push({ index: column.index, activeHash: chosenOption.hash });
+
+      if (chosenOption.hash !== defaultOption.hash) {
+        const defaultDeltas = statDeltaMap(defaultOption);
+        const chosenDeltas = statDeltaMap(chosenOption);
+        const allStatHashes = new Set([...defaultDeltas.keys(), ...chosenDeltas.keys()]);
+        for (const statHash of allStatHashes) {
+          const diff = (chosenDeltas.get(statHash) ?? 0) - (defaultDeltas.get(statHash) ?? 0);
+          if (diff !== 0) statDeltas.set(statHash, (statDeltas.get(statHash) ?? 0) + diff);
+        }
+      }
+    }
+  }
+
+  return { resolvedColumns, statDeltas };
+}
+
+export async function getWeaponDetail(hash, selectedHashes = []) {
   const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories } = await loadTables();
 
   const item = itemDefs[hash];
   if (!item || item.itemType !== WEAPON_ITEM_TYPE) return null;
 
+  const sockets = buildSockets(item, itemDefs, plugSets, socketCategories);
+  const { resolvedColumns, statDeltas } = resolveSelections(sockets, selectedHashes);
+
+  const activeHashByIndex = new Map(resolvedColumns.map((c) => [c.index, c.activeHash]));
+  const socketsWithSelection = sockets.map((category) => ({
+    ...category,
+    columns: category.columns.map((col) => ({ ...col, activeHash: activeHashByIndex.get(col.index) })),
+  }));
+
   return {
     ...mapItemDefinition(item, damageTypes),
-    stats: buildStats(item, statDefs, statGroupDefs),
-    sockets: buildSockets(item, itemDefs, plugSets, socketCategories),
+    stats: buildStats(item, statDefs, statGroupDefs, statDeltas),
+    sockets: socketsWithSelection,
   };
 }

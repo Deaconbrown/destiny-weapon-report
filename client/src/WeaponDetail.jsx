@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { tierColor } from "./tiers.js";
+import TierStars from "./TierStars.jsx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 export default function WeaponDetail() {
   const { hash } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [weapon, setWeapon] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const perksParam = searchParams.get("perks") ?? "";
+
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE_URL}/api/weapons/${hash}`)
+    const url = new URL(`${API_BASE_URL}/api/weapons/${hash}`);
+    if (perksParam) url.searchParams.set("perks", perksParam);
+
+    fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 404 ? "Weapon not found" : `Request failed: ${res.status}`);
         return res.json();
@@ -21,7 +28,16 @@ export default function WeaponDetail() {
       .then(setWeapon)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [hash]);
+  }, [hash, perksParam]);
+
+  function selectPerk(clickedColumnIndex, clickedHash) {
+    const allColumns = weapon.sockets.flatMap((c) => c.columns);
+    const nextHashes = allColumns
+      .filter((col) => col.options.length > 1)
+      .map((col) => (col.index === clickedColumnIndex ? clickedHash : col.activeHash));
+
+    setSearchParams(nextHashes.length ? { perks: nextHashes.join(",") } : {});
+  }
 
   if (loading) return <div className="page"><p className="status">Loading weapon...</p></div>;
   if (error) return <div className="page"><p className="status error">Error: {error}</p><Link to="/">&larr; Back to search</Link></div>;
@@ -32,7 +48,10 @@ export default function WeaponDetail() {
       <Link to="/" className="back-link">&larr; Back to search</Link>
 
       <div className="detail-header">
-        {weapon.icon && <img className="detail-icon" src={weapon.icon} alt={weapon.name} />}
+        <div className="detail-icon-wrap">
+          {weapon.icon && <img className="detail-icon" src={weapon.icon} alt={weapon.name} />}
+          {weapon.tierStars && <TierStars count={weapon.tierStars} />}
+        </div>
         <div>
           <h1>{weapon.name}</h1>
           <p className="weapon-type">{weapon.weaponCategory}</p>
@@ -42,6 +61,7 @@ export default function WeaponDetail() {
             </span>
             {weapon.damageType && <span className="tag">{weapon.damageType}</span>}
             <span className="tag">{weapon.ammoType}</span>
+            {weapon.season != null && <span className="tag">Season {weapon.season}</span>}
           </div>
         </div>
       </div>
@@ -82,12 +102,23 @@ export default function WeaponDetail() {
           <div className="perk-columns">
             {category.columns.map((col) => (
               <div className="perk-column" key={col.index}>
-                {col.options.map((perk) => (
-                  <div className="perk" key={perk.hash} title={perk.description}>
-                    {perk.icon && <img src={perk.icon} alt={perk.name} />}
-                    <span>{perk.name}</span>
-                  </div>
-                ))}
+                {col.options.map((perk) => {
+                  const selectable = col.options.length > 1;
+                  const isActive = perk.hash === col.activeHash;
+                  return (
+                    <button
+                      type="button"
+                      key={perk.hash}
+                      className={`perk${isActive ? " perk-active" : ""}${selectable ? " perk-selectable" : ""}`}
+                      title={perk.description}
+                      disabled={!selectable}
+                      onClick={() => selectable && selectPerk(col.index, perk.hash)}
+                    >
+                      {perk.icon && <img src={perk.icon} alt={perk.name} />}
+                      <span>{perk.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>

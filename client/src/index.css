@@ -83,12 +83,24 @@ body {
   border-color: #4a5160;
 }
 
-.weapon-card img {
+.card-icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.card-icon-wrap img {
   width: 56px;
   height: 56px;
   border-radius: 6px;
   background: #0d0f14;
-  flex-shrink: 0;
+}
+
+.tier-stars {
+  display: flex;
+  gap: 1px;
 }
 
 .weapon-info h3 {
@@ -141,12 +153,23 @@ body {
   margin-bottom: 12px;
 }
 
+.detail-icon-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
 .detail-icon {
   width: 84px;
   height: 84px;
   border-radius: 8px;
   background: #161920;
-  flex-shrink: 0;
+}
+
+.detail-icon-wrap .tier-stars {
+  gap: 2px;
 }
 
 .detail-header h1 {
@@ -259,6 +282,28 @@ body {
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
+  width: 100%;
+  text-align: left;
+  color: #c7cbd4;
+  font-family: inherit;
+}
+
+.perk-selectable {
+  cursor: pointer;
+}
+
+.perk-selectable:hover {
+  border-color: #4a5160;
+}
+
+.perk-active {
+  border-color: #3987e5;
+  background: #16233a;
+  color: #e6e8ec;
+}
+
+.perk:disabled {
+  opacity: 0.85;
 }
 
 .perk img {
