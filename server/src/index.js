@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { ensureManifestCache, ensureSeasonData, getWeapons, getWeaponDetail } from "./bungie.js";
+import { ensureManifestCache, ensureSeasonData, ensureClarityData, getWeapons, getWeaponDetail } from "./bungie.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -63,6 +63,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 async function start() {
   await ensureManifestCache(API_KEY);
   await ensureSeasonData();
+  await ensureClarityData();
   app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 }
 

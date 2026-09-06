@@ -1,19 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { tierColor } from "./tiers.js";
+import { damageColor } from "./damageTypes.js";
 import { slugify } from "./slug.js";
 import TierStars from "./TierStars.jsx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
+function GridCard({ w }) {
+  return (
+    <Link className="weapon-card" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
+      <div className="card-icon-wrap">
+        {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
+        {w.tierStars && <TierStars count={w.tierStars} size={9} />}
+      </div>
+      <div className="weapon-info">
+        <h3>{w.name}</h3>
+        <p className="weapon-type">{w.weaponCategory}</p>
+        <div className="weapon-tags">
+          <span className="tag tier-tag" style={{ borderColor: tierColor(w.tierType), color: tierColor(w.tierType) }}>
+            {w.tierType}
+          </span>
+          {w.damageType && (
+            <span className="tag" style={{ borderColor: damageColor(w.damageType), color: damageColor(w.damageType) }}>
+              {w.damageType}
+            </span>
+          )}
+          <span className="tag">{w.ammoType}</span>
+          {w.season != null && <span className="tag">S{w.season}</span>}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function ListRow({ w }) {
+  return (
+    <Link className="weapon-row" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
+      <span className="row-damage-dot" style={{ backgroundColor: damageColor(w.damageType) }} title={w.damageType ?? ""} />
+      <span className="row-season">{w.season != null ? `S${w.season}` : ""}</span>
+      {w.icon && <img className="row-icon" src={w.icon} alt={w.name} loading="lazy" />}
+      <span className="row-name">{w.name}</span>
+      <span className="row-type">{w.itemTypeDisplayName}</span>
+      <span className="row-frame">{w.frameName}</span>
+    </Link>
+  );
+}
+
 export default function WeaponList() {
   const [weapons, setWeapons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
   const [nameFilter, setNameFilter] = useState("");
-  const [damageTypeFilter, setDamageTypeFilter] = useState("");
-  const [ammoTypeFilter, setAmmoTypeFilter] = useState("");
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem("dwr-view-mode") ?? "grid");
 
   useEffect(() => {
     setLoading(true);
@@ -27,30 +66,26 @@ export default function WeaponList() {
       .finally(() => setLoading(false));
   }, []);
 
-  const damageTypes = useMemo(
-    () => [...new Set(weapons.map((w) => w.damageType).filter(Boolean))].sort(),
-    [weapons]
-  );
-  const ammoTypes = useMemo(
-    () => [...new Set(weapons.map((w) => w.ammoType).filter(Boolean))].sort(),
-    [weapons]
-  );
+  function changeView(mode) {
+    setViewMode(mode);
+    try {
+      localStorage.setItem("dwr-view-mode", mode);
+    } catch {
+      /* private browsing or storage disabled — view choice just won't persist */
+    }
+  }
 
   const filtered = useMemo(() => {
     const needle = nameFilter.trim().toLowerCase();
-    return weapons.filter((w) => {
-      if (needle && !w.name.toLowerCase().includes(needle)) return false;
-      if (damageTypeFilter && w.damageType !== damageTypeFilter) return false;
-      if (ammoTypeFilter && w.ammoType !== ammoTypeFilter) return false;
-      return true;
-    });
-  }, [weapons, nameFilter, damageTypeFilter, ammoTypeFilter]);
+    if (!needle) return weapons;
+    return weapons.filter((w) => w.name.toLowerCase().includes(needle));
+  }, [weapons, nameFilter]);
 
   return (
     <div className="page">
       <header className="page-header">
         <h1>Destiny Weapon Report</h1>
-        <p>Search and filter Destiny 2 weapons by name, damage type, and ammo type.</p>
+        <p>Search Destiny 2 weapons by name.</p>
       </header>
 
       <div className="filters">
@@ -60,18 +95,10 @@ export default function WeaponList() {
           value={nameFilter}
           onChange={(e) => setNameFilter(e.target.value)}
         />
-        <select value={damageTypeFilter} onChange={(e) => setDamageTypeFilter(e.target.value)}>
-          <option value="">All damage types</option>
-          {damageTypes.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-        <select value={ammoTypeFilter} onChange={(e) => setAmmoTypeFilter(e.target.value)}>
-          <option value="">All ammo types</option>
-          {ammoTypes.map((a) => (
-            <option key={a} value={a}>{a}</option>
-          ))}
-        </select>
+        <div className="view-toggle">
+          <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => changeView("grid")}>Grid</button>
+          <button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => changeView("list")}>List</button>
+        </div>
       </div>
 
       {loading && <p className="status">Loading weapons...</p>}
@@ -79,28 +106,15 @@ export default function WeaponList() {
       {!loading && !error && (
         <>
           <p className="result-count">{filtered.length} weapons</p>
-          <div className="weapon-grid">
-            {filtered.map((w) => (
-              <Link className="weapon-card" key={w.hash} to={`/weapon/${w.hash}/${slugify(w.name)}`}>
-                <div className="card-icon-wrap">
-                  {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
-                  {w.tierStars && <TierStars count={w.tierStars} size={9} />}
-                </div>
-                <div className="weapon-info">
-                  <h3>{w.name}</h3>
-                  <p className="weapon-type">{w.weaponCategory}</p>
-                  <div className="weapon-tags">
-                    <span className="tag tier-tag" style={{ borderColor: tierColor(w.tierType), color: tierColor(w.tierType) }}>
-                      {w.tierType}
-                    </span>
-                    {w.damageType && <span className="tag">{w.damageType}</span>}
-                    <span className="tag">{w.ammoType}</span>
-                    {w.season != null && <span className="tag">S{w.season}</span>}
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+          {viewMode === "grid" ? (
+            <div className="weapon-grid">
+              {filtered.map((w) => <GridCard w={w} key={w.hash} />)}
+            </div>
+          ) : (
+            <div className="weapon-list">
+              {filtered.map((w) => <ListRow w={w} key={w.hash} />)}
+            </div>
+          )}
         </>
       )}
     </div>

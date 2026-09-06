@@ -27,10 +27,16 @@ const EMPTY_SOCKET_NAMES = new Set(["Empty Mod Socket", "None", "Random Masterwo
 const WATERMARK_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/watermark-to-season.json";
 const HASH_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/seasons.json";
 
+// Community-sourced (Clarity project, d2clarity.com — free use under 150 users with
+// attribution per their partnerships terms) detailed perk descriptions, since Bungie's
+// own perk text is often vague ("improves handling" with no numbers).
+const CLARITY_URL = "https://raw.githubusercontent.com/Database-Clarity/Live-Clarity-Database/master/descriptions/clarity.json";
+
 let weaponsCache = null;
 let tableCache = null;
 let watermarkSeasonsCache = null;
 let hashSeasonsCache = null;
+let clarityCache = null;
 
 function cachePath(key) {
   return path.join(CACHE_DIR, `${key}.json`);
@@ -103,6 +109,34 @@ export async function ensureSeasonData() {
   await ensureSeasonsCache();
 }
 
+export async function ensureClarityData() {
+  try {
+    clarityCache = await fetchAndCacheJson(CLARITY_URL, "clarity_external");
+    console.log("Clarity perk descriptions cached.");
+  } catch (err) {
+    console.warn("Could not fetch Clarity data (non-fatal, tooltips fall back to Bungie text):", err.message);
+    clarityCache = clarityCache ?? {};
+  }
+}
+
+// Clarity's rich text format is paragraphs of {linesContent:[{text,classNames}]} with
+// occasional {classNames:["spacer"]} blank-line markers. Flattened here to plain
+// paragraphs + spacers; inline pve/pvp/link styling is dropped for a simple tooltip.
+function simplifyClarityText(entry) {
+  const paragraphs = entry?.descriptions?.en;
+  if (!Array.isArray(paragraphs)) return null;
+
+  const lines = paragraphs
+    .map((p) => (p.classNames?.includes("spacer") ? "" : (p.linesContent ?? []).map((l) => l.text).join("")))
+    .filter((line, i, arr) => !(line === "" && (i === 0 || arr[i - 1] === "")));
+
+  return lines.length > 0 ? lines : null;
+}
+
+function clarityTextForHash(hash) {
+  return simplifyClarityText(clarityCache?.[String(hash)]);
+}
+
 function seasonForItem(item) {
   const byWatermark =
     watermarkSeasonsCache?.[item.iconWatermark] ?? watermarkSeasonsCache?.[item.iconWatermarkShelved];
@@ -153,7 +187,22 @@ function iconUrl(icon) {
   return icon ? `https://www.bungie.net${icon}` : null;
 }
 
-function mapItemDefinition(item, damageTypeDefs) {
+function frameNameForItem(item, itemDefs, socketCategoryDefs) {
+  const categories = item.sockets?.socketCategories ?? [];
+  const entries = item.sockets?.socketEntries ?? [];
+
+  for (const category of categories) {
+    const categoryName = socketCategoryDefs[category.socketCategoryHash]?.displayProperties?.name;
+    if (categoryName !== "INTRINSIC TRAITS") continue;
+
+    const entry = entries[category.socketIndexes[0]];
+    const frameItem = entry?.singleInitialItemHash ? itemDefs[entry.singleInitialItemHash] : null;
+    return frameItem?.displayProperties?.name ?? null;
+  }
+  return null;
+}
+
+function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs) {
   const damageTypeHash = item.defaultDamageTypeHash ?? item.damageTypeHashes?.[0];
   const damageType = damageTypeHash ? damageTypeDefs[damageTypeHash] : null;
   const ammoTypeValue = item.equippingBlock?.ammoType ?? 0;
@@ -166,6 +215,7 @@ function mapItemDefinition(item, damageTypeDefs) {
     flavorText: item.flavorText ?? "",
     itemTypeDisplayName: item.itemTypeDisplayName ?? "",
     weaponCategory: item.itemTypeAndTierDisplayName ?? item.itemTypeDisplayName ?? "",
+    frameName: frameNameForItem(item, itemDefs, socketCategoryDefs),
     damageType: damageType?.displayProperties?.name ?? null,
     damageTypeIcon: iconUrl(damageType?.displayProperties?.icon),
     ammoType: AMMO_TYPE_LABELS[ammoTypeValue] ?? "Unknown",
@@ -179,11 +229,11 @@ function mapItemDefinition(item, damageTypeDefs) {
 export async function getWeapons() {
   if (weaponsCache) return weaponsCache;
 
-  const { items: itemDefs, damageTypes: damageTypeDefs } = await loadTables();
+  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories } = await loadTables();
 
   const weapons = Object.values(itemDefs)
     .filter((item) => item.itemType === WEAPON_ITEM_TYPE && !item.redacted && !item.blacklisted && item.displayProperties?.name)
-    .map((item) => mapItemDefinition(item, damageTypeDefs));
+    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories));
 
   weaponsCache = weapons;
   return weapons;
@@ -305,6 +355,7 @@ function resolvePerkOptions(entry, itemDefs, plugSets) {
         name: isEnhanced ? `${p.displayProperties.name} (Enhanced)` : p.displayProperties.name,
         icon: iconUrl(p.displayProperties.icon),
         description: p.displayProperties.description ?? "",
+        clarityText: clarityTextForHash(p.hash),
         isDefault: p.hash === entry.singleInitialItemHash,
         isEnhanced,
         investmentStats: p.investmentStats ?? [],
@@ -381,7 +432,7 @@ export async function getWeaponDetail(hash, selectedHashes = []) {
   }));
 
   return {
-    ...mapItemDefinition(item, damageTypes),
+    ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories),
     stats: buildStats(item, statDefs, statGroupDefs, statDeltas),
     sockets: socketsWithSelection,
   };
