@@ -26,15 +26,30 @@ const CHAMPION_PERK_PATTERN = /^\[(Shield-Piercing|Disruption|Stagger)\]\s*(.+)$
 
 const AMMO_TYPE_LABELS = { 0: "None", 1: "Primary", 2: "Special", 3: "Heavy" };
 const WEAPON_ITEM_TYPE = 3;
-const TIER_STAR_ELIGIBLE = new Set(["Legendary"]);
+// Weapons from the tier system (Edge of Fate, release v900, onwards) carry a gear-tier
+// upgrade socket; older copies of the same weapon don't. Only those get tier stars.
+const GEAR_TIER_SOCKET_NAME = "Empty Gear Tier Upgrade";
+
+function isTieredWeapon(item, itemDefs) {
+  return (item.sockets?.socketEntries ?? []).some(
+    (e) => itemDefs[e.singleInitialItemHash]?.displayProperties?.name === GEAR_TIER_SOCKET_NAME
+  );
+}
 const EXCLUDED_SOCKET_CATEGORIES = new Set(["weapon cosmetics"]);
 const EMPTY_SOCKET_NAMES = new Set(["Empty Mod Socket", "None", "Random Masterwork", "Tier 1 Weapon"]);
+// Socket category holding the rollable columns (barrel, magazine, traits, origin) used for perk search.
+const PERK_SEARCH_CATEGORY = "WEAPON PERKS";
 
 // Community-maintained (MIT license, DIM project) season data. Bungie's live API has no
 // field linking an item back to its release season — watermark icon -> season has far
 // better coverage (shared badge per season) than the direct item-hash table, so it's tried first.
 const WATERMARK_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/watermark-to-season.json";
 const HASH_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/seasons.json";
+
+// Manual labels, not Bungie data: Bungie's season list ends at S28 (Monument of Triumph),
+// which spans several content releases. Weapons from the v970 release are labelled S29 to
+// match destiny.report's numbering. Review if Bungie adds a real Season 29.
+const RELEASE_SEASON_OVERRIDES = [{ traitPrefix: "releases.v970", season: 29 }];
 
 // Community-sourced (Clarity project, d2clarity.com — free use under 150 users with
 // attribution per their partnerships terms) detailed perk descriptions, since Bungie's
@@ -46,6 +61,7 @@ let tableCache = null;
 let watermarkSeasonsCache = null;
 let hashSeasonsCache = null;
 let clarityCache = null;
+let perkTableCache = null;
 
 function cachePath(key) {
   return path.join(CACHE_DIR, `${key}.json`);
@@ -111,6 +127,7 @@ export async function ensureManifestCache(apiKey) {
 
   weaponsCache = null;
   tableCache = null;
+  perkTableCache = null;
   console.log("Manifest definitions cached.");
 }
 
@@ -147,6 +164,9 @@ function clarityTextForHash(hash) {
 }
 
 function seasonForItem(item) {
+  const override = RELEASE_SEASON_OVERRIDES.find((o) => item.traitIds?.some((t) => t.startsWith(o.traitPrefix)));
+  if (override) return override.season;
+
   const byWatermark =
     watermarkSeasonsCache?.[item.iconWatermark] ?? watermarkSeasonsCache?.[item.iconWatermarkShelved];
   if (byWatermark != null) return byWatermark;
@@ -247,21 +267,113 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, b
     isWeapon: item.itemType === WEAPON_ITEM_TYPE,
     season: seasonForItem(item),
     seasonIcon: iconUrl(item.iconWatermark ?? item.iconWatermarkShelved),
-    tierStars: TIER_STAR_ELIGIBLE.has(item.inventory?.tierTypeName) ? 5 : null,
+    tierStars: isTieredWeapon(item, itemDefs) ? 5 : null,
   };
+}
+
+function plugHashesForEntry(entry, plugSets) {
+  const plugSetHash = entry?.randomizedPlugSetHash || entry?.reusablePlugSetHash;
+  if (plugSetHash && plugSets[plugSetHash]) return plugSets[plugSetHash].reusablePlugItems.map((p) => p.plugItemHash);
+  return entry?.singleInitialItemHash ? [entry.singleInitialItemHash] : [];
+}
+
+// Perk search keys on the perk's name, so an enhanced perk (same name, different hash)
+// counts as its base perk. Plugs with no item type are trackers/catalyst sockets, not perks.
+function collectWeaponPerkIds(item, itemDefs, plugSets, socketCategoryDefs, perkIdByName, perkTable) {
+  const ids = new Set();
+  const entries = item.sockets?.socketEntries ?? [];
+
+  for (const category of item.sockets?.socketCategories ?? []) {
+    if (socketCategoryDefs[category.socketCategoryHash]?.displayProperties?.name !== PERK_SEARCH_CATEGORY) continue;
+
+    for (const index of category.socketIndexes) {
+      for (const plugHash of plugHashesForEntry(entries[index], plugSets)) {
+        const plug = itemDefs[plugHash];
+        const name = plug?.displayProperties?.name;
+        if (!name || !plug.itemTypeDisplayName || EMPTY_SOCKET_NAMES.has(name)) continue;
+
+        const isEnhanced = plug.itemTypeDisplayName.startsWith("Enhanced");
+        let id = perkIdByName.get(name);
+        if (id === undefined) {
+          id = perkTable.length;
+          perkIdByName.set(name, id);
+          perkTable.push({
+            id,
+            name,
+            icon: iconUrl(plug.displayProperties.icon),
+            kind: plug.itemTypeDisplayName.replace(/^Enhanced\s+/, ""),
+            iconFromEnhanced: isEnhanced,
+          });
+        } else if (perkTable[id].iconFromEnhanced && !isEnhanced) {
+          // Prefer the base perk's icon over the enhanced variant's art.
+          perkTable[id].icon = iconUrl(plug.displayProperties.icon);
+          perkTable[id].iconFromEnhanced = false;
+        }
+        ids.add(id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+// The manifest carries hidden copies of some weapons (same name, season and watermark;
+// usually no collectible). Keep one per group, preferring the collectible copy, but let it
+// search on every copy's perks so no rollable perk drops out of perk search.
+function dedupeWeapons(weapons, itemDefs) {
+  const groups = new Map();
+  for (const w of weapons) {
+    const key = `${w.name}|${w.season ?? ""}|${w.seasonIcon ?? ""}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(w);
+  }
+
+  return [...groups.values()].map((group) => {
+    if (group.length === 1) return group[0];
+    const [kept] = [...group].sort(
+      (a, b) =>
+        Number(Boolean(itemDefs[b.hash]?.collectibleHash)) - Number(Boolean(itemDefs[a.hash]?.collectibleHash)) ||
+        b.perkIds.length - a.perkIds.length ||
+        a.hash - b.hash
+    );
+    return { ...kept, perkIds: [...new Set(group.flatMap((w) => w.perkIds))] };
+  });
+}
+
+// Fixed list order: newest season first, then A-Z; unknown seasons last.
+function sortBySeason(weapons) {
+  return [...weapons].sort((a, b) => {
+    if (a.season == null || b.season == null) {
+      if (a.season !== b.season) return a.season == null ? 1 : -1;
+    } else if (a.season !== b.season) {
+      return b.season - a.season;
+    }
+    return a.name.localeCompare(b.name);
+  });
 }
 
 export async function getWeapons() {
   if (weaponsCache) return weaponsCache;
 
-  const { items: itemDefs, damageTypes: damageTypeDefs, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
+  const { items: itemDefs, damageTypes: damageTypeDefs, plugSets, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
+
+  const perkIdByName = new Map();
+  const perkTable = [];
 
   const weapons = Object.values(itemDefs)
     .filter((item) => item.itemType === WEAPON_ITEM_TYPE && !item.redacted && !item.blacklisted && item.displayProperties?.name)
-    .map((item) => mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes, sandboxPerks));
+    .map((item) => ({
+      ...mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes, sandboxPerks),
+      perkIds: collectWeaponPerkIds(item, itemDefs, plugSets, socketCategories, perkIdByName, perkTable),
+    }));
 
-  weaponsCache = weapons;
-  return weapons;
+  perkTableCache = perkTable.map(({ iconFromEnhanced, ...perk }) => perk);
+  weaponsCache = sortBySeason(dedupeWeapons(weapons, itemDefs));
+  return weaponsCache;
+}
+
+export async function getPerks() {
+  if (!perkTableCache) await getWeapons();
+  return perkTableCache;
 }
 
 // Piecewise-linear interpolation per Bungie's DestinyStatGroupDefinition contract:
@@ -361,16 +473,7 @@ function dedupeByName(options) {
 }
 
 function resolvePerkOptions(entry, itemDefs, plugSets) {
-  const plugSetHash = entry.randomizedPlugSetHash || entry.reusablePlugSetHash;
-  let plugItemHashes = [];
-
-  if (plugSetHash && plugSets[plugSetHash]) {
-    plugItemHashes = plugSets[plugSetHash].reusablePlugItems.map((p) => p.plugItemHash);
-  } else if (entry.singleInitialItemHash) {
-    plugItemHashes = [entry.singleInitialItemHash];
-  }
-
-  const options = plugItemHashes
+  const options = plugHashesForEntry(entry, plugSets)
     .map((hash) => itemDefs[hash])
     .filter((p) => p?.displayProperties?.name)
     .map((p) => {

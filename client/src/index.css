@@ -46,6 +46,131 @@ body {
   min-width: 220px;
 }
 
+.search-bar {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1a1d24;
+  border: 1px solid #2c3038;
+  border-bottom: 2px solid #c9a24a;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: text;
+}
+
+.search-chips {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #232732;
+  border: 1px solid #3a3f4b;
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.search-chip button,
+.search-clear {
+  background: none;
+  border: none;
+  color: #9aa1ac;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.search-chip button:hover,
+.search-clear:hover {
+  color: #e6e8ec;
+}
+
+.filters .search-bar input {
+  flex: 1;
+  min-width: 140px;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 4px 2px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.search-clear {
+  font-size: 20px;
+}
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #1a1d24;
+  border: 1px solid #2c3038;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.search-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.search-suggestions li.active {
+  background: #232732;
+}
+
+.suggestion-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.suggestion-icon img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.suggestion-label {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-hint {
+  color: #9aa1ac;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .view-toggle {
   display: flex;
   border: 1px solid #2c3038;
@@ -76,7 +201,7 @@ body {
 
 .weapon-row {
   display: grid;
-  grid-template-columns: 8px 30px 36px 1fr 1fr 1fr;
+  grid-template-columns: 14px 30px 48px 1fr 1fr 1fr;
   align-items: center;
   column-gap: 16px;
   padding: 7px 6px;
@@ -90,10 +215,16 @@ body {
   background: #161920;
 }
 
-.row-damage-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.row-damage {
+  display: flex;
+  align-items: center;
+}
+
+/* Bungie's damage icons are already coloured symbols, so they sit on no background. */
+.damage-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
@@ -104,9 +235,24 @@ body {
   font-weight: 600;
 }
 
+/* Stars stacked down the left edge of the gun image, like the Grid cards. */
+.row-stars {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  pointer-events: none;
+}
+
+.row-stars .tier-stars {
+  flex-direction: column;
+  gap: 1px;
+}
+
 .row-icon-box {
-  width: 32px;
-  height: 32px;
+  position: relative;
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
   border-radius: 4px;
   background: #161920;
   border: 1px solid #2c3038;
@@ -117,8 +263,8 @@ body {
 }
 
 .row-icon {
-  width: 32px;
-  height: 32px;
+  width: 100%;
+  height: 100%;
   border-radius: 4px;
   display: block;
 }
@@ -274,21 +420,6 @@ body {
 
 .card-meta-muted {
   color: #6b7280;
-}
-
-.card-damage-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.card-damage-badge img {
-  width: 10px;
-  height: 10px;
 }
 
 .card-champion-icon {
@@ -582,9 +713,7 @@ body {
 .hero-damage-icon {
   width: 26px;
   height: 26px;
-  border-radius: 6px;
-  padding: 4px;
-  box-sizing: border-box;
+  object-fit: contain;
 }
 
 .hero-season {

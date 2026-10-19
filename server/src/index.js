@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { ensureManifestCache, ensureSeasonData, ensureClarityData, getWeapons, getWeaponDetail } from "./bungie.js";
+import { ensureManifestCache, ensureSeasonData, ensureClarityData, getWeapons, getWeaponDetail, getPerks } from "./bungie.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -35,6 +35,16 @@ app.get("/api/weapons", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load weapons" });
+  }
+});
+
+app.get("/api/perks", async (req, res) => {
+  try {
+    const perks = await getPerks();
+    res.json({ count: perks.length, results: perks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load perks" });
   }
 });
 

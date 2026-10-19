@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { tierColor } from "./tiers.js";
-import { damageColor } from "./damageTypes.js";
 import { slugify } from "./slug.js";
 import TierStars from "./TierStars.jsx";
 import WeaponTypeIcon from "./weaponTypeIcons.jsx";
+import SearchBar from "./SearchBar.jsx";
+import { buildSuggestionContext, filterWeapons, formatQuery, parseQuery } from "./searchQuery.js";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
@@ -22,9 +23,7 @@ function GridCard({ w }) {
       <h3 className="card-name">{w.name}</h3>
       <div className="card-meta">
         {w.damageTypeIcon && (
-          <span className="card-damage-badge" style={{ backgroundColor: damageColor(w.damageType) }} title={w.damageType ?? ""}>
-            <img src={w.damageTypeIcon} alt={w.damageType ?? ""} />
-          </span>
+          <img className="damage-icon" src={w.damageTypeIcon} alt={w.damageType ?? ""} title={w.damageType ?? ""} />
         )}
         <span className="card-meta-item">{w.ammoType}</span>
         {w.championIcon && <img className="card-champion-icon" src={w.championIcon} alt={w.championName ?? ""} title={w.championName ?? ""} />}
@@ -42,10 +41,17 @@ function GridCard({ w }) {
 function ListRow({ w }) {
   return (
     <Link className="weapon-row" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
-      <span className="row-damage-dot" style={{ backgroundColor: damageColor(w.damageType) }} title={w.damageType ?? ""} />
+      <span className="row-damage">
+        {w.damageTypeIcon && <img className="damage-icon" src={w.damageTypeIcon} alt={w.damageType ?? ""} title={w.damageType ?? ""} />}
+      </span>
       <span className="row-season">{w.season != null ? `S${w.season}` : ""}</span>
       <span className="row-icon-box">
         {w.icon ? <img className="row-icon" src={w.icon} alt={w.name} loading="lazy" /> : null}
+        {w.tierStars && (
+          <span className="row-stars">
+            <TierStars count={w.tierStars} size={7} />
+          </span>
+        )}
       </span>
       <span className="row-name">{w.name}</span>
       <span className="row-type">
@@ -63,22 +69,44 @@ function ListRow({ w }) {
 
 export default function WeaponList() {
   const [weapons, setWeapons] = useState([]);
+  const [perks, setPerks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [nameFilter, setNameFilter] = useState("");
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem("dwr-view-mode") ?? "grid");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem("dwr-view-mode") ?? "grid";
+    } catch {
+      return "grid";
+    }
+  });
+
+  // The search lives in the URL (?q=perk:discord is:strand) so it can be bookmarked or shared.
+  const query = searchParams.get("q") ?? "";
+  const tokens = useMemo(() => parseQuery(query), [query]);
+
+  function changeTokens(next) {
+    const q = formatQuery(next);
+    setSearchParams(q ? { q } : {}, { replace: true });
+  }
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE_URL}/api/weapons`)
-      .then((res) => {
+    const getJson = (path) =>
+      fetch(`${API_BASE_URL}${path}`).then((res) => {
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         return res.json();
+      });
+    Promise.all([getJson("/api/weapons"), getJson("/api/perks")])
+      .then(([weaponData, perkData]) => {
+        setWeapons(weaponData.results);
+        setPerks(perkData.results);
       })
-      .then((data) => setWeapons(data.results))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const suggestionContext = useMemo(() => buildSuggestionContext(weapons, perks), [weapons, perks]);
 
   function changeView(mode) {
     setViewMode(mode);
@@ -89,26 +117,17 @@ export default function WeaponList() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const needle = nameFilter.trim().toLowerCase();
-    if (!needle) return weapons;
-    return weapons.filter((w) => w.name.toLowerCase().includes(needle));
-  }, [weapons, nameFilter]);
+  const filtered = useMemo(() => filterWeapons(weapons, tokens, perks), [weapons, tokens, perks]);
 
   return (
     <div className="page">
       <header className="page-header">
         <h1>Destiny Weapon Report</h1>
-        <p>Search Destiny 2 weapons by name.</p>
+        <p>Search Destiny 2 weapons by name, perk, damage type, weapon type, frame, season and more.</p>
       </header>
 
       <div className="filters">
-        <input
-          type="text"
-          placeholder="Search weapon name..."
-          value={nameFilter}
-          onChange={(e) => setNameFilter(e.target.value)}
-        />
+        <SearchBar tokens={tokens} onChange={changeTokens} context={suggestionContext} />
         <div className="view-toggle">
           <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => changeView("grid")}>Grid</button>
           <button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => changeView("list")}>List</button>
@@ -119,7 +138,7 @@ export default function WeaponList() {
       {error && <p className="status error">Error: {error}</p>}
       {!loading && !error && (
         <>
-          <p className="result-count">{filtered.length} weapons</p>
+          <p className="result-count">{tokens.length > 0 ? `${filtered.length} matches` : `${filtered.length} weapons`}</p>
           {viewMode === "grid" ? (
             <div className="weapon-grid">
               {filtered.map((w) => <GridCard w={w} key={w.hash} />)}

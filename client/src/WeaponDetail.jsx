@@ -124,7 +124,7 @@ export default function WeaponDetail() {
           <div className="hero-overlay">
             <div className="hero-badges">
               {weapon.damageTypeIcon && (
-                <img className="hero-damage-icon" src={weapon.damageTypeIcon} alt={weapon.damageType} style={{ backgroundColor: damageColor(weapon.damageType) }} />
+                <img className="hero-damage-icon" src={weapon.damageTypeIcon} alt={weapon.damageType} title={weapon.damageType} />
               )}
               {weapon.season != null && <span className="hero-season">S{weapon.season}</span>}
               {weapon.tierStars && <TierStars count={weapon.tierStars} size={10} />}
