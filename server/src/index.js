@@ -11,7 +11,7 @@ import {
   getPerks,
   getFilters,
 } from "./bungie.js";
-import { getCutout } from "./cutout.js";
+import { getCutout, CUTOUT_VERSION } from "./cutout.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -76,8 +76,9 @@ app.get("/api/picture/:hash", async (req, res) => {
     const weapon = await getWeaponDetail(hash);
     if (!weapon?.screenshot) return res.status(404).json({ useOriginal: true });
     const cutout = await getCutout(hash, weapon.screenshot);
-    if (cutout.useOriginal) return res.status(404).json({ useOriginal: true, glowScore: cutout.glowScore });
-    res.set("Cache-Control", "public, max-age=86400").type("image/webp").sendFile(cutout.file);
+    if (!cutout.file) return res.status(404).json({ useOriginal: true, glowScore: cutout.glowScore });
+    // kind: "cutout" (gun cut out) or "original" (Bungie's picture cropped, darkened, faded)
+    res.set("Cache-Control", "public, max-age=86400").set("X-Picture-Kind", cutout.kind).type("image/webp").sendFile(cutout.file);
   } catch (err) {
     console.error(`Cut-out failed for ${hash}:`, err.message);
     res.status(404).json({ useOriginal: true });
@@ -97,7 +98,7 @@ app.get("/api/weapons/:hash", async (req, res) => {
     const weapon = await getWeaponDetail(hash, selectedHashes);
     if (!weapon) return res.status(404).json({ error: "Weapon not found" });
 
-    res.json(weapon);
+    res.json({ ...weapon, pictureVersion: CUTOUT_VERSION });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load weapon detail" });

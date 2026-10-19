@@ -24,9 +24,20 @@ const HI = 26; // clearly different from the backdrop
 const LO = 9; // edge band starts fading in here
 const GLOW_LIMIT = 25; // % of the ring around the gun still off-backdrop -> use the original
 const TRIM_MARGIN = 12;
+const RIM_DIFF = 55; // the backdrop rim differs from the model by less than this
 const BORDER = 140; // px strip along the picture's edges where the backdrop's rim lives
 
+// Bump whenever the cut-out method changes: it goes into the picture link (?v=), so browsers
+// fetch the new image instead of a cached old one.
+export const CUTOUT_VERSION = 3;
+
 const inFlight = new Map();
+
+// Weapons the cut-out can't do well (parts the same grey as Bungie's backdrop get lost);
+// these always show the original picture instead. Add hashes as they're spotted.
+const FORCE_ORIGINAL = new Set([
+  4062069077, // Conspiracy Honed (S29): grey stock blends into the backdrop
+]);
 
 function terms(x, y) {
   return [1, x, y, x * x, x * y, y * y, x * x * x, x * x * y, x * y * y, y * y * y];
@@ -185,6 +196,13 @@ export function cutOutWeapon(px, w, h) {
   }
   const solid = new Uint8Array(n);
   for (let i = 0; i < n; i++) solid[i] = reached[i] ? 0 : 1;
+  // the rim along the picture's edge is low-contrast; drop it inside the border strip so it
+  // can't stay joined to a gun that runs off the edge (bows, long barrels)
+  for (let i = 0; i < n; i++) {
+    if (!solid[i] || diff[i] >= RIM_DIFF) continue;
+    const x = i % w, y = (i - x) / w;
+    if (x < BORDER || x >= w - BORDER || y < BORDER || y >= h - BORDER) solid[i] = 0;
+  }
 
   // 3b. corner vignette blobs, small faint blobs
   forEachComponent(w, h, (i) => solid[i] === 1, (members) => {
@@ -258,36 +276,71 @@ export function cutOutWeapon(px, w, h) {
   return { rgba: out, box, glowScore };
 }
 
-async function buildCutout(hash, screenshotUrl) {
+// Bungie's own picture, cropped to the gun with some room around it, darkened and with its
+// edges faded out, so it sits on the dark page like a cut-out does.
+async function croppedOriginal(source, info, box) {
+  const padX = Math.round(box.width * 0.12), padY = Math.round(box.height * 0.12);
+  const left = Math.max(0, box.left - padX), top = Math.max(0, box.top - padY);
+  const width = Math.min(info.width, box.left + box.width + padX) - left;
+  const height = Math.min(info.height, box.top + box.height + padY) - top;
+  const fade = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#fff"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>` +
+      `<rect width="100%" height="100%" fill="url(#g)"/></svg>`
+  );
+  // contrast x1.35 around mid-grey, then 72% brightness: out = 0.972 * in - 32
+  return sharp(source)
+    .extract({ left, top, width, height })
+    .linear(0.972, -32)
+    .ensureAlpha()
+    .composite([{ input: fade, blend: "dest-in" }])
+    .webp({ quality: 85, alphaQuality: 90 })
+    .toBuffer();
+}
+
+async function buildCutout(hash, screenshotUrl, { forceOriginal = false } = {}) {
   const res = await fetch(screenshotUrl);
   if (!res.ok) throw new Error(`Screenshot fetch failed: ${res.status}`);
-  const { data, info } = await sharp(Buffer.from(await res.arrayBuffer())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const source = Buffer.from(await res.arrayBuffer());
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
   const { rgba, box, glowScore } = cutOutWeapon(data, info.width, info.height);
-  const useOriginal = !box || glowScore > GLOW_LIMIT;
-  const meta = { hash, useOriginal, glowScore: Math.round(glowScore * 10) / 10, box, createdAt: new Date().toISOString() };
+  const useOriginal = forceOriginal || !box || glowScore > GLOW_LIMIT;
+  const meta = { hash, useOriginal, forceOriginal, glowScore: Math.round(glowScore * 10) / 10, box, version: CUTOUT_VERSION, createdAt: new Date().toISOString() };
 
-  await fs.mkdir(CUTOUT_DIR, { recursive: true });
+  let webp;
   if (!useOriginal) {
-    const webp = await sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } })
+    webp = await sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } })
       .extract(box)
       .webp({ quality: 88, alphaQuality: 90 })
       .toBuffer();
-    await fs.writeFile(path.join(CUTOUT_DIR, `${hash}.webp`), webp);
+  } else if (box) {
+    webp = await croppedOriginal(source, info, box);
   }
+  await fs.mkdir(CUTOUT_DIR, { recursive: true });
+  if (webp) await fs.writeFile(path.join(CUTOUT_DIR, `${hash}.webp`), webp);
+  meta.hasImage = Boolean(webp);
   await fs.writeFile(path.join(CUTOUT_DIR, `${hash}.json`), JSON.stringify(meta));
   return meta;
 }
 
-// Returns { useOriginal, file? } — made once per weapon, then read from the cache.
+// Returns { file, kind } (kind "cutout" or "original"), or { file: null } when there's no
+// image (the page then shows Bungie's full picture). Made once per weapon, then cached.
 export async function getCutout(hash, screenshotUrl) {
   const metaPath = path.join(CUTOUT_DIR, `${hash}.json`);
   let meta = null;
   try {
     meta = JSON.parse(await fs.readFile(metaPath, "utf-8"));
+    if (meta.version !== CUTOUT_VERSION) meta = null;
   } catch {
-    if (!inFlight.has(hash)) inFlight.set(hash, buildCutout(hash, screenshotUrl).finally(() => inFlight.delete(hash)));
+    meta = null;
+  }
+  if (!meta) {
+    const forceOriginal = FORCE_ORIGINAL.has(hash);
+    if (!inFlight.has(hash)) inFlight.set(hash, buildCutout(hash, screenshotUrl, { forceOriginal }).finally(() => inFlight.delete(hash)));
     meta = await inFlight.get(hash);
   }
-  return meta.useOriginal ? { useOriginal: true, glowScore: meta.glowScore } : { useOriginal: false, file: path.join(CUTOUT_DIR, `${hash}.webp`) };
+  return meta.hasImage
+    ? { file: path.join(CUTOUT_DIR, `${hash}.webp`), kind: meta.useOriginal ? "original" : "cutout", glowScore: meta.glowScore }
+    : { file: null, glowScore: meta.glowScore };
 }

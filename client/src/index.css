@@ -573,10 +573,34 @@ body {
 }
 
 .stat-track {
+  position: relative;
   height: 8px;
   border-radius: 4px;
   background: #1c355e;
   overflow: hidden;
+}
+
+/* The part of a stat bar that the selected perks added (green) or took away (red). */
+.stat-fill-change {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.stat-fill-change.stat-up {
+  background: #3fbf6f;
+}
+
+.stat-fill-change.stat-down {
+  background: #e0524f;
+}
+
+.stat-value.stat-up {
+  color: #4cd480;
+}
+
+.stat-value.stat-down {
+  color: #ff6b66;
 }
 
 .stat-fill {
@@ -667,12 +691,22 @@ body {
 /* Compact detail layout */
 .page-wide {
   max-width: 1800px;
+  /* side spacing: half of the reference site's (~139px -> 70px) */
+  padding-left: 70px;
+  padding-right: 70px;
+}
+
+/* DIM-style recoil direction half-circle, drawn where the stat bar would be */
+.recoil-pie {
+  display: block;
+  width: 32px;
+  height: 16px;
 }
 
 /* Results list | picture with perks (+ mods strip below) | details sidebar */
 .detail-layout {
   display: grid;
-  grid-template-columns: 250px minmax(0, 1.6fr) minmax(280px, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr) 380px;
   gap: 20px;
   align-items: start;
 }
@@ -743,60 +777,107 @@ body {
   min-width: 0;
 }
 
-/* Reference-style centre: perks on the left, the gun large on the right, all on the page's
-   own colour with a faint navy glow behind the gun (no picture box or edges). */
+/* Centre: a fixed gun area across the full centre width (480px tall), with the perks and
+   badges drawn on top of its left side. The area is 480px or the perk columns' height,
+   whichever is bigger, so nothing on the page can change its size while hovering. */
 .detail-hero {
-  display: flex;
-  align-items: stretch;
-  min-height: 460px;
+  position: relative;
+  min-height: 480px;
   min-width: 0;
-  background: radial-gradient(ellipse 55% 70% at 68% 55%, #161a22 0%, #12151c 45%, rgba(11, 13, 18, 0) 80%);
+  background: radial-gradient(ellipse 55% 70% at 68% 45%, #161a22 0%, #12151c 45%, rgba(11, 13, 18, 0) 80%);
+}
+
+.hero-gun {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 480px;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+/* the gun at 70% of the area (machine guns 56%), right-aligned */
+.hero-cutout {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  object-position: right center;
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.45));
+}
+
+.hero-gun-mg .hero-cutout {
+  width: 56%;
+  height: 56%;
+}
+
+/* bows are tall and narrow: keep some room on their right */
+.hero-gun-bow {
+  padding-right: 15%;
 }
 
 .hero-content {
   position: relative;
   z-index: 1;
-  display: flex;
+  display: inline-flex;
   gap: 14px;
   align-items: flex-start;
   padding: 14px 0;
-  flex-shrink: 0;
 }
 
-.hero-gun {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 0 10px 20px;
+/* soft dark fade behind the perks so the icons stay readable over a long gun */
+.hero-content::before {
+  content: "";
+  position: absolute;
+  inset: 0 -60px 0 -14px;
+  background: linear-gradient(90deg, rgba(11, 13, 18, 0.88), rgba(11, 13, 18, 0.6) 70%, rgba(11, 13, 18, 0));
+  z-index: -1;
 }
 
-.hero-cutout {
-  max-width: 100%;
-  max-height: 440px;
-  object-fit: contain;
-  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.45));
-}
-
-/* Glowing guns keep Bungie's whole picture: darkened, with only the outer edges faded
-   into the page (no zoom or crop, so long guns stay whole). */
+/* only if the server has no picture: Bungie's full picture, darkened, edges faded */
 .hero-fallback {
-  width: 100%;
-  max-height: 440px;
+  width: 70%;
+  height: 70%;
   object-fit: contain;
+  object-position: right center;
   filter: contrast(1.35) brightness(0.72);
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent),
-    linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent),
-    linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
-  mask-composite: intersect;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%);
 }
 
+/* the perk/mod description sits under the gun area (never over the picture); a fixed
+   height so the mods below don't move, long texts scroll inside */
+.desc-strip {
+  height: 118px;
+  margin: 8px 0 0 78px;
+}
+
+.desc-strip .perk-desc {
+  margin-top: 0;
+  width: 620px;
+  max-width: 100%;
+  height: 118px;
+  overflow-y: auto;
+}
+
+
+
+/* Indented by the badges column (64px) + the gap (14px) so the first mod sits directly
+   under the masterwork column. */
+.mods-strip {
+  padding-left: 78px;
+}
+
+.mods-strip {
+  margin-top: 8px;
+}
 
 .mods-strip .mod-grid {
-  grid-template-columns: repeat(7, 32px);
+  grid-template-columns: repeat(7, 40px);
+  gap: 6px;
 }
 
 .hero-overlay {
@@ -814,6 +895,8 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  width: 64px;
+  flex-shrink: 0;
   flex-shrink: 0;
 }
 
@@ -913,7 +996,10 @@ body {
   gap: 12px;
   align-items: flex-start;
   margin-top: 12px;
-  max-width: 380px;
+  /* fixed, so long or short perk texts never change the width of the perk area (and with
+     it the size of the gun picture next to it) */
+  width: 380px;
+  box-sizing: border-box;
   background: rgba(13, 15, 20, 0.85);
   border-left: 3px solid #4a5160;
   padding: 10px 14px;
@@ -964,13 +1050,18 @@ body {
 }
 
 .mod-btn {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 1px solid #3a3f4b;
   border-radius: 4px;
   background: #232732;
-  cursor: default;
+  cursor: pointer;
+}
+
+.mod-btn-selected {
+  border-color: #e8c34a;
+  box-shadow: 0 0 0 2px rgba(232, 195, 74, 0.45);
 }
 
 .mod-btn:hover,
@@ -1018,7 +1109,7 @@ body {
 
 @media (max-width: 1100px) {
   .detail-layout {
-    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+    grid-template-columns: minmax(0, 1fr) 380px;
   }
   .detail-results {
     display: none;
@@ -1029,4 +1120,36 @@ body {
   .detail-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* Floating perk/mod info beside the hovered icon (placed by FloatingInfo) */
+.floating-info {
+  position: fixed;
+  z-index: 50;
+  visibility: hidden;
+  width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  pointer-events: none;
+  background: #161920;
+  border: 1px solid #323744;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.floating-info .perk-desc {
+  margin: 0;
+  width: auto;
+  border-left: none;
+  background: transparent;
+}
+
+/* bows sit in the middle of the gun area */
+.hero-gun.hero-gun-bow {
+  padding-right: 0;
+  justify-content: center;
+}
+
+.hero-gun-bow .hero-cutout {
+  object-position: center;
 }

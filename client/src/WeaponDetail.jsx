@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { tierColor } from "./tiers.js";
 import { damageColor } from "./damageTypes.js";
@@ -47,26 +47,65 @@ function layoutSockets(sockets, weaponName) {
   const masterwork = modColumns.find(isMasterworkColumn) ?? null;
   // Show the Enhanced mods when the gun has them (names without the suffix); older guns
   // only have normal mods, so show those instead.
-  const allMods = modColumns
-    .filter((col) => !isMasterworkColumn(col) && !isGearTierColumn(col) && !isMementoColumn(col) && !isEnhancementLevelColumn(col))
-    .flatMap((col) => col.options);
+  const extraColumns = modColumns.filter(
+    (col) => !isMasterworkColumn(col) && !isGearTierColumn(col) && !isMementoColumn(col) && !isEnhancementLevelColumn(col)
+  );
+  // Real weapon mods go in the mods grid. Anything else in that area is an Exotic special part
+  // (catalyst upgrades, Blade Focus, Forms, Cores...): shown as its own square perk column.
+  const isRealModColumn = (col) => col.options.some((o) => /Weapon Mod$/.test(o.type ?? ""));
+  const specialColumns = extraColumns
+    .filter((col) => !isRealModColumn(col))
+    .map((col) => ({ ...col, options: col.options.filter((o) => !/^Empty /.test(o.name)) }))
+    .filter((col) => col.options.length > 0);
+  const allMods = extraColumns
+    .filter(isRealModColumn)
+    // each mod remembers its socket column, so picking one replaces the previous pick there
+    .flatMap((col) => col.options.map((o) => ({ ...o, column: col })));
   const enhancedMods = allMods.filter((m) => m.isEnhanced).map((m) => ({ ...m, name: baseName(m.name) }));
   // Adept mods only fit Adept weapons; there they're listed first.
   const normalMods = ADEPT_WEAPON.test(weaponName)
     ? [...allMods.filter(isAdeptMod), ...allMods.filter((m) => !isAdeptMod(m))]
     : allMods.filter((m) => !isAdeptMod(m));
   const mods = enhancedMods.length > 0 ? enhancedMods : normalMods;
-  return { frame, masterwork, perkColumns, mods };
+  return { frame, masterwork, specialColumns, perkColumns, mods };
 }
 
-function PerkButton({ perk, selected, square, onSelect, onHover }) {
+// Recoil direction pie, following DIM's RecoilStat (github.com/DestinyItemManager/DIM, MIT).
+// direction: + leans right, - leans left, 0 straight up; lower values give a wider wedge;
+// 95 and above is drawn as a single line.
+function recoilDirection(value) {
+  return Math.sin((value + 5) * (Math.PI / 10)) * (100 - value);
+}
+
+function RecoilPie({ value }) {
+  const direction = recoilDirection(value) * 0.8 * (Math.PI / 180);
+  const x = Math.sin(direction);
+  const y = Math.cos(direction);
+  const spread = ((100 - value) / 100) * 90 * (Math.PI / 180) * Math.sign(direction);
+  const more = { x: Math.sin(direction + spread), y: Math.cos(direction + spread) };
+  const less = { x: Math.sin(direction - spread), y: Math.cos(direction - spread) };
+  return (
+    <svg className="recoil-pie" viewBox="0 0 2 1" aria-label={`Recoil direction ${value}`}>
+      <circle r={1} cx={1} cy={1} fill="#333" />
+      {value >= 95 ? (
+        <line x1={1 - x} y1={1 + y} x2={1 + x} y2={1 - y} stroke="white" strokeWidth="0.1" />
+      ) : (
+        <path d={`M1,1 L${1 + more.x},${1 - more.y} A1,1 0 0,${direction < 0 ? "1" : "0"} ${1 + less.x},${1 - less.y} Z`} fill="#fff" />
+      )}
+    </svg>
+  );
+}
+
+function PerkButton({ perk, selected, square, onSelect, onHover, onLeave }) {
   return (
     <button
       type="button"
       className={`perk-btn${square ? " perk-btn-square" : ""}${selected ? " perk-btn-selected" : ""}`}
       onClick={onSelect}
-      onMouseEnter={() => onHover(perk)}
-      onFocus={() => onHover(perk)}
+      onMouseEnter={(e) => onHover(perk, e.currentTarget)}
+      onFocus={(e) => onHover(perk, e.currentTarget)}
+      onMouseLeave={onLeave}
+      onBlur={onLeave}
       aria-pressed={selected}
       aria-label={perk.name}
     >
@@ -94,13 +133,39 @@ function PerkDescription({ perk }) {
   );
 }
 
+// Floating info box beside the hovered icon. Placed to the right of it, or to the left /
+// higher up when it would run off the window.
+function FloatingInfo({ tip }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !tip) return;
+    const { rect } = tip;
+    const box = el.getBoundingClientRect();
+    const left = rect.right + 10 + box.width > window.innerWidth - 8 ? rect.left - 10 - box.width : rect.right + 10;
+    const top = Math.max(8, Math.min(rect.top, window.innerHeight - box.height - 8));
+    el.style.left = `${Math.max(8, left)}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = "visible";
+  }, [tip]);
+  if (!tip) return null;
+  return (
+    <div ref={ref} className="floating-info" role="tooltip">
+      <PerkDescription perk={tip.perk} />
+    </div>
+  );
+}
+
 export default function WeaponDetail() {
   const { hash } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [weapon, setWeapon] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [hovered, setHovered] = useState(null);
+  // the floating info box: { perk, rect } of the hovered icon
+  const [tip, setTip] = useState(null);
+  const showTip = (perk, el) => setTip({ perk, rect: el.getBoundingClientRect() });
+  const hideTip = () => setTip(null);
   const [cutoutFailed, setCutoutFailed] = useState(null);
   const [listData, setListData] = useState(null);
   const currentRowRef = useRef(null);
@@ -145,7 +210,7 @@ export default function WeaponDetail() {
   }, [hash, perksParam]);
 
   useEffect(() => {
-    setHovered(null);
+    setTip(null);
   }, [hash]);
 
   const layout = useMemo(() => (weapon ? layoutSockets(weapon.sockets, weapon.name) : null), [weapon]);
@@ -173,6 +238,9 @@ export default function WeaponDetail() {
   if (error) return <div className="page"><p className="status error">Error: {error}</p><Link to="/">&larr; Back to search</Link></div>;
   if (!weapon || !layout) return null;
 
+  const baseValue = new Map(
+    [...(weapon.baseStats?.bars ?? []), ...(weapon.baseStats?.info ?? [])].map((s) => [s.statHash, s.value])
+  );
   const allStatRows = [
     ...weapon.stats.bars.map((s) => ({ ...s, isBar: true })),
     ...weapon.stats.info.map((s) => ({ ...s, isBar: false })),
@@ -215,6 +283,21 @@ export default function WeaponDetail() {
 
               <div className="detail-perks">
                 <div className="perk-grid">
+                  {layout.specialColumns.map((col) => (
+                    <div className="perk-col" key={col.index}>
+                      {col.options.map((o) => (
+                        <PerkButton
+                          key={o.hash}
+                          perk={o}
+                          square
+                          selected={isSelected(col, o)}
+                          onSelect={() => selectPerk(col, o)}
+                          onHover={showTip}
+                          onLeave={hideTip}
+                        />
+                      ))}
+                    </div>
+                  ))}
                   {layout.masterwork && (
                     <div className="perk-col">
                       {layout.masterwork.options.map((o) => (
@@ -224,7 +307,7 @@ export default function WeaponDetail() {
                           square
                           selected={isSelected(layout.masterwork, o)}
                           onSelect={() => selectPerk(layout.masterwork, o)}
-                          onHover={setHovered}
+                          onHover={showTip} onLeave={hideTip}
                         />
                       ))}
                     </div>
@@ -232,24 +315,25 @@ export default function WeaponDetail() {
                   {layout.perkColumns.map((col) => (
                     <div className="perk-col" key={col.index}>
                       {col.options.map((o) => (
-                        <PerkButton key={o.hash} perk={o} selected={isSelected(col, o)} onSelect={() => selectPerk(col, o)} onHover={setHovered} />
+                        <PerkButton key={o.hash} perk={o} selected={isSelected(col, o)} onSelect={() => selectPerk(col, o)} onHover={showTip} onLeave={hideTip} />
                       ))}
                     </div>
                   ))}
                 </div>
-
-                <PerkDescription perk={hovered ?? layout.frame} />
               </div>
             </div>
 
-            {/* The gun cut out of Bungie's backdrop; glowing guns (or a failed cut-out) fall back
-                to the original picture, darkened and faded into the page. */}
-            <div className="hero-gun">
+            {/* The server's picture: the gun cut out of Bungie's backdrop, or (for guns that don't
+                cut out well) Bungie's picture cropped to the gun, darkened and faded. If the server
+                has none, Bungie's full picture is shown instead. */}
+            <div
+              className={`hero-gun${weapon.itemTypeDisplayName === "Machine Gun" ? " hero-gun-mg" : ""}${weapon.itemTypeDisplayName === "Combat Bow" ? " hero-gun-bow" : ""}`}
+            >
               {cutoutFailed !== weapon.hash ? (
                 <img
                   key={weapon.hash}
                   className="hero-cutout"
-                  src={`${API_BASE_URL}/api/picture/${weapon.hash}`}
+                  src={`${API_BASE_URL}/api/picture/${weapon.hash}?v=${weapon.pictureVersion ?? 1}`}
                   alt={weapon.name}
                   onError={() => setCutoutFailed(weapon.hash)}
                 />
@@ -259,11 +343,27 @@ export default function WeaponDetail() {
             </div>
           </div>
 
+          <div className="desc-strip">
+            {/* always the weapon frame / intrinsic trait; hovering shows the floating box instead */}
+            <PerkDescription perk={layout.frame} />
+          </div>
+
           {layout.mods.length > 0 && (
             <div className="mods-strip">
               <div className="mod-grid">
                 {layout.mods.map((m) => (
-                  <button type="button" key={m.hash} className="mod-btn" onMouseEnter={() => setHovered(m)} onFocus={() => setHovered(m)} aria-label={m.name}>
+                  <button
+                    type="button"
+                    key={m.hash}
+                    className={`mod-btn${isSelected(m.column, m) ? " mod-btn-selected" : ""}`}
+                    onClick={() => selectPerk(m.column, m)}
+                    onMouseEnter={(e) => showTip(m, e.currentTarget)}
+                    onFocus={(e) => showTip(m, e.currentTarget)}
+                    onMouseLeave={hideTip}
+                    onBlur={hideTip}
+                    aria-pressed={isSelected(m.column, m)}
+                    aria-label={m.name}
+                  >
                     {m.icon ? <img src={m.icon} alt="" /> : <span className="perk-btn-fallback">{m.name[0]}</span>}
                   </button>
                 ))}
@@ -299,22 +399,40 @@ export default function WeaponDetail() {
           {weapon.flavorText && <p className="flavor-text">{weapon.flavorText}</p>}
 
           <div className="sidebar-stat-list">
-            {allStatRows.map((s) => (
-              <div className="stat-row" key={s.statHash}>
-                <span className="stat-name">{s.name}</span>
-                {s.isBar ? (
-                  <div className="stat-track">
-                    <div className="stat-fill" style={{ width: `${Math.min(100, (s.value / s.maximumValue) * 100)}%` }} />
-                  </div>
-                ) : (
-                  <div className="stat-track stat-track-empty" />
-                )}
-                <span className="stat-value">{s.value}</span>
-              </div>
-            ))}
+            {allStatRows.map((s) => {
+              // Compare with the stats before any perk was picked: green = added, red = taken away,
+              // picks that cancel out (net 0) stay the normal colour.
+              const base = baseValue.get(s.statHash) ?? s.value;
+              const delta = s.value - base;
+              const tone = delta > 0 ? " stat-up" : delta < 0 ? " stat-down" : "";
+              const pct = (v) => `${Math.max(0, Math.min(100, (v / s.maximumValue) * 100))}%`;
+              return (
+                <div className="stat-row" key={s.statHash}>
+                  <span className="stat-name">{s.name}</span>
+                  {s.isBar ? (
+                    <div className="stat-track">
+                      <div className="stat-fill" style={{ width: pct(Math.min(s.value, base)) }} />
+                      {delta !== 0 && (
+                        <div
+                          className={`stat-fill-change${tone}`}
+                          style={{ left: pct(Math.min(s.value, base)), width: `calc(${pct(Math.max(s.value, base))} - ${pct(Math.min(s.value, base))})` }}
+                        />
+                      )}
+                    </div>
+                  ) : s.name === "Recoil Direction" ? (
+                    <RecoilPie value={s.value} />
+                  ) : (
+                    <div className="stat-track stat-track-empty" />
+                  )}
+                  <span className={`stat-value${tone}`}>{s.value}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
+
+      <FloatingInfo tip={tip} />
 
       <p className="clarity-credit">
         Perk insights by <a href="https://www.d2clarity.com/" target="_blank" rel="noreferrer">Clarity</a>

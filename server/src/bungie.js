@@ -537,28 +537,33 @@ export async function getFilters() {
   return { sources, seasons };
 }
 
-// Piecewise-linear interpolation per Bungie's DestinyStatGroupDefinition contract:
-// investment (raw) stat value -> display value, via a sorted list of {value, weight} points.
-function interpolateStat(rawValue, points) {
-  if (!points || points.length === 0) return rawValue;
-  const sorted = [...points].sort((a, b) => a.weight - b.weight);
-  if (rawValue <= sorted[0].weight) return sorted[0].value;
+// Bungie's stat tables map a raw (investment) stat to the number the game shows:
+// each point is { value: raw, weight: shown }, linear in between.
+function interpolateStat(raw, points) {
+  if (!points || points.length === 0) return raw;
+  const sorted = [...points].sort((a, b) => a.value - b.value);
+  if (raw <= sorted[0].value) return sorted[0].weight;
   const last = sorted[sorted.length - 1];
-  if (rawValue >= last.weight) return last.value;
+  if (raw >= last.value) return last.weight;
 
   for (let i = 0; i < sorted.length - 1; i++) {
     const a = sorted[i];
     const b = sorted[i + 1];
-    if (rawValue >= a.weight && rawValue <= b.weight) {
-      const t = (rawValue - a.weight) / (b.weight - a.weight);
-      return Math.round(a.value + t * (b.value - a.value));
+    if (raw >= a.value && raw <= b.value) {
+      const span = b.value - a.value;
+      const t = span ? (raw - a.value) / span : 0;
+      return Math.round(a.weight + t * (b.weight - a.weight));
     }
   }
-  return rawValue;
+  return raw;
 }
 
+// Base numbers are Bungie's own displayed stats (item.stats, already converted), so they
+// match the game exactly. Perk changes are worked out on the raw stat and converted through
+// the same table: shown + table(raw + delta) - table(raw).
 function buildStats(item, statDefs, statGroupDefs, statDeltas = new Map()) {
-  const rawStats = item.stats?.stats ?? {};
+  const shownStats = item.stats?.stats ?? {};
+  const rawBase = new Map((item.investmentStats ?? []).map((s) => [s.statTypeHash, s.value]));
   const statGroup = item.stats?.statGroupHash ? statGroupDefs[item.stats.statGroupHash] : null;
   const scaledStats = statGroup?.scaledStats ?? [];
   const scaledHashes = new Set(scaledStats.map((s) => String(s.statHash)));
@@ -566,29 +571,23 @@ function buildStats(item, statDefs, statGroupDefs, statDeltas = new Map()) {
   const bars = [];
   const info = [];
 
-  // displayAsNumeric stats (Charge Time, Magazine, RPM, etc.) are meant to be shown as
-  // their raw value, not scaled 0-100 — their displayInterpolation tables are often
-  // degenerate (e.g. two points at the same weight) and aren't meant for bar scaling.
   for (const s of scaledStats) {
-    const def = statDefs[s.statHash];
-    const name = def?.displayProperties?.name;
+    const name = statDefs[s.statHash]?.displayProperties?.name;
     if (!name) continue;
-    const baseRaw = rawStats[s.statHash]?.value ?? 0;
-    const raw = baseRaw + (statDeltas.get(s.statHash) ?? 0);
+    const raw = rawBase.get(s.statHash) ?? 0;
+    const shown = shownStats[s.statHash]?.value ?? interpolateStat(raw, s.displayInterpolation);
+    const delta = statDeltas.get(s.statHash) ?? 0;
+    const value = delta ? shown + interpolateStat(raw + delta, s.displayInterpolation) - interpolateStat(raw, s.displayInterpolation) : shown;
 
+    // displayAsNumeric stats (RPM, Magazine, Draw Time...) are shown as numbers, not bars
     if (s.displayAsNumeric) {
-      if (raw > 0) info.push({ statHash: s.statHash, name, value: raw });
+      if (value > 0 || shown > 0) info.push({ statHash: s.statHash, name, value: Math.max(0, value) });
     } else {
-      bars.push({
-        statHash: s.statHash,
-        name,
-        value: Math.max(0, interpolateStat(raw, s.displayInterpolation)),
-        maximumValue: s.maximumValue ?? 100,
-      });
+      bars.push({ statHash: s.statHash, name, value: Math.max(0, value), maximumValue: s.maximumValue ?? 100 });
     }
   }
 
-  for (const [hash, stat] of Object.entries(rawStats)) {
+  for (const [hash, stat] of Object.entries(shownStats)) {
     if (scaledHashes.has(hash)) continue;
     const name = statDefs[hash]?.displayProperties?.name;
     const value = stat.value + (statDeltas.get(Number(hash)) ?? 0);
@@ -601,6 +600,8 @@ function buildStats(item, statDefs, statGroupDefs, statDeltas = new Map()) {
 function statDeltaMap(plugItem) {
   const map = new Map();
   for (const s of plugItem?.investmentStats ?? []) {
+    // bonuses Bungie marks as conditional only apply in certain situations (DIM skips them too)
+    if (s.isConditionallyActive) continue;
     map.set(s.statTypeHash, (map.get(s.statTypeHash) ?? 0) + s.value);
   }
   return map;
@@ -647,6 +648,8 @@ function resolvePerkOptions(entry, itemDefs, plugSets) {
         clarityText: clarityTextForHash(p.hash),
         isDefault: p.hash === entry.singleInitialItemHash,
         isEnhanced,
+        type: p.itemTypeDisplayName ?? "",
+        isCosmetic: /cosmetics$/.test(p.plug?.plugCategoryIdentifier ?? ""),
         investmentStats: p.investmentStats ?? [],
       };
     });
@@ -668,7 +671,8 @@ function buildSockets(item, itemDefs, plugSets, socketCategoryDefs) {
 
       const columns = category.socketIndexes
         .map((index) => ({ index, options: resolvePerkOptions(entries[index], itemDefs, plugSets) }))
-        .filter((col) => col.options.length > 0);
+        // drop empty columns and purely cosmetic ones (e.g. Praxic Blade's crystal colours)
+        .filter((col) => col.options.length > 0 && !col.options.every((o) => o.isCosmetic));
       if (columns.length === 0) return null;
 
       return { categoryName, columns };
@@ -685,14 +689,18 @@ function resolveSelections(sockets, selectedHashes) {
 
   for (const category of sockets) {
     for (const column of category.columns) {
-      const defaultOption = column.options.find((o) => o.isDefault) ?? column.options[0];
-      const chosenOption = column.options.find((o) => selectedSet.has(o.hash)) ?? defaultOption;
+      // A fixed perk (the column's initial plug) is part of the weapon's base stats. Random
+      // columns have no such perk, so nothing counts until the user picks one; then its full
+      // stats apply (measured against "no perk", not against the column's first entry).
+      const defaultOption = column.options.find((o) => o.isDefault) ?? null;
+      const pickedOption = column.options.find((o) => selectedSet.has(o.hash)) ?? null;
+      const chosenOption = pickedOption ?? defaultOption ?? column.options[0];
 
       resolvedColumns.push({ index: column.index, activeHash: chosenOption.hash });
 
-      if (chosenOption.hash !== defaultOption.hash) {
-        const defaultDeltas = statDeltaMap(defaultOption);
-        const chosenDeltas = statDeltaMap(chosenOption);
+      if (pickedOption && pickedOption.hash !== defaultOption?.hash) {
+        const defaultDeltas = defaultOption ? statDeltaMap(defaultOption) : new Map();
+        const chosenDeltas = statDeltaMap(pickedOption);
         const allStatHashes = new Set([...defaultDeltas.keys(), ...chosenDeltas.keys()]);
         for (const statHash of allStatHashes) {
           const diff = (chosenDeltas.get(statHash) ?? 0) - (defaultDeltas.get(statHash) ?? 0);
@@ -737,6 +745,8 @@ export async function getWeaponDetail(hash, selectedHashes = []) {
   return {
     ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories, breakerTypes, sandboxPerks),
     stats,
+    // nothing picked: the page colours each stat by how the picks move it from here
+    baseStats: buildStats(item, statDefs, statGroupDefs),
     sockets: limitMasterworksToWeaponStats(socketsWithSelection, stats),
   };
 }
