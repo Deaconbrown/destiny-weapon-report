@@ -15,6 +15,8 @@ const TABLES = {
   socketCategories: "DestinySocketCategoryDefinition",
   breakerTypes: "DestinyBreakerTypeDefinition",
   sandboxPerks: "DestinySandboxPerkDefinition",
+  collectibles: "DestinyCollectibleDefinition",
+  seasons: "DestinySeasonDefinition",
 };
 
 // As of the 2026 champion-mod overhaul, anti-Champion capability is intrinsic to every
@@ -46,10 +48,34 @@ const PERK_SEARCH_CATEGORY = "WEAPON PERKS";
 const WATERMARK_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/watermark-to-season.json";
 const HASH_SEASONS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/seasons.json";
 
-// Manual labels, not Bungie data: Bungie's season list ends at S28 (Monument of Triumph),
-// which spans several content releases. Weapons from the v970 release are labelled S29 to
-// match destiny.report's numbering. Review if Bungie adds a real Season 29.
-const RELEASE_SEASON_OVERRIDES = [{ traitPrefix: "releases.v970", season: 29 }];
+// Season numbering after The Final Shape follows the wiki (d2.destinygamewiki.com/wiki/Seasons),
+// which counts Ash and Iron as its own season. Bungie and DIM fold it into S27, so from
+// Dec 2025 they run one number behind. These are manual labels per Bungie release tag,
+// not Bungie data — review when a new release or season lands.
+const RELEASE_SEASON_OVERRIDES = [
+  { traitPrefix: "releases.v900", season: 27 },
+  { traitPrefix: "releases.v910", season: 28 },
+  { traitPrefix: "releases.v950", season: 29 },
+  { traitPrefix: "releases.v960", season: 29 },
+  { traitPrefix: "releases.v970", season: 29 },
+];
+
+// DIM's season tags (redwar, osiris, ... heresy) match this numbering up to S27 only;
+// later seasons, and Bungie's unnamed S1, are named here.
+const LAST_DIM_TAGGED_SEASON = 27;
+const SEASON_OVERRIDES = {
+  1: { name: "Red War", tags: [] },
+  27: { name: "Season: Reclamation", tags: ["reclamation"] },
+  28: { name: "Season: Ash and Iron", tags: ["ashandiron"] },
+  29: { name: "Monument of Triumph", tags: ["monumentoftriumph", "mot", "lawless", "renegades"] },
+  30: { name: "Season: Shadow & Order", tags: ["shadowandorder"] },
+};
+
+// Community-maintained (MIT license, DIM project) short source names (ironbanner, trials,
+// vaultofglass, ...) mapped onto Bungie collectible source hashes, plus DIM's season tags.
+// The source list is a TypeScript file: it is parsed as text, never executed.
+const SEASON_TAGS_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/season-tags.json";
+const SOURCE_INFO_URL = "https://raw.githubusercontent.com/DestinyItemManager/d2-additional-info/master/output/source-info-v2.ts";
 
 // Community-sourced (Clarity project, d2clarity.com — free use under 150 users with
 // attribution per their partnerships terms) detailed perk descriptions, since Bungie's
@@ -62,6 +88,8 @@ let watermarkSeasonsCache = null;
 let hashSeasonsCache = null;
 let clarityCache = null;
 let perkTableCache = null;
+let dimSourcesCache = null;
+let seasonTagsCache = null;
 
 function cachePath(key) {
   return path.join(CACHE_DIR, `${key}.json`);
@@ -133,6 +161,77 @@ export async function ensureManifestCache(apiKey) {
 
 export async function ensureSeasonData() {
   await ensureSeasonsCache();
+}
+
+// Each source block in DIM's file looks like:  ironbanner: { sourceHashes: [ 123, // comment ], aliases: ['ib'] },
+function parseDimSources(text) {
+  const start = text.indexOf("} = {");
+  if (start === -1) throw new Error("Unexpected source-info format");
+  const body = text.slice(start + 5);
+  const numbersIn = (block, field) => {
+    const list = new RegExp(`${field}: \\[([\\s\\S]*?)\\]`).exec(block)?.[1] ?? "";
+    return [...list.matchAll(/^\s*(\d+),/gm)].map((m) => Number(m[1]));
+  };
+
+  const sources = {};
+  for (const m of body.matchAll(/^ {2}'?([a-z0-9]+)'?: \{([\s\S]*?)^ {2}\},/gm)) {
+    const block = m[2];
+    const aliasList = /aliases: \[([\s\S]*?)\]/.exec(block)?.[1] ?? "";
+    sources[m[1]] = {
+      sourceHashes: numbersIn(block, "sourceHashes"),
+      itemHashes: numbersIn(block, "itemHashes"),
+      aliases: [...aliasList.matchAll(/'([^']+)'/g)].map((a) => a[1]),
+    };
+  }
+  if (Object.keys(sources).length === 0) throw new Error("No sources parsed");
+  return sources;
+}
+
+async function fetchAndCacheParsed(url, cacheKey, parse) {
+  const filePath = cachePath(cacheKey);
+  const cached = await readJsonIfExists(filePath);
+  if (cached) return cached;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch failed for ${cacheKey}: ${res.status}`);
+  const data = parse(await res.text());
+  await fs.writeFile(filePath, JSON.stringify(data));
+  return data;
+}
+
+export async function ensureSourceData() {
+  try {
+    [dimSourcesCache, seasonTagsCache] = await Promise.all([
+      fetchAndCacheParsed(SOURCE_INFO_URL, "dim_sources_external", parseDimSources),
+      fetchAndCacheJson(SEASON_TAGS_URL, "season_tags_external"),
+    ]);
+    console.log(`Source data cached from d2-additional-info (${Object.keys(dimSourcesCache).length} sources).`);
+  } catch (err) {
+    console.warn("Could not fetch source data (non-fatal, source: search will be empty):", err.message);
+    dimSourcesCache = dimSourcesCache ?? {};
+    seasonTagsCache = seasonTagsCache ?? {};
+  }
+  weaponsCache = null;
+}
+
+function buildSourceIndex() {
+  const bySourceHash = new Map();
+  const byItemHash = new Map();
+  const add = (map, hash, key) => {
+    if (!map.has(hash)) map.set(hash, []);
+    map.get(hash).push(key);
+  };
+  for (const [key, info] of Object.entries(dimSourcesCache ?? {})) {
+    for (const h of info.sourceHashes) add(bySourceHash, h, key);
+    for (const h of info.itemHashes) add(byItemHash, h, key);
+  }
+  return { bySourceHash, byItemHash };
+}
+
+function sourcesForItem(item, collectibleDefs, sourceIndex) {
+  const sourceHash = collectibleDefs[item.collectibleHash]?.sourceHash;
+  const keys = [...(sourceIndex.bySourceHash.get(sourceHash) ?? []), ...(sourceIndex.byItemHash.get(item.hash) ?? [])];
+  return [...new Set(keys)];
 }
 
 export async function ensureClarityData() {
@@ -335,7 +434,11 @@ function dedupeWeapons(weapons, itemDefs) {
         b.perkIds.length - a.perkIds.length ||
         a.hash - b.hash
     );
-    return { ...kept, perkIds: [...new Set(group.flatMap((w) => w.perkIds))] };
+    return {
+      ...kept,
+      perkIds: [...new Set(group.flatMap((w) => w.perkIds))],
+      sources: [...new Set(group.flatMap((w) => w.sources))],
+    };
   });
 }
 
@@ -354,16 +457,18 @@ function sortBySeason(weapons) {
 export async function getWeapons() {
   if (weaponsCache) return weaponsCache;
 
-  const { items: itemDefs, damageTypes: damageTypeDefs, plugSets, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
+  const { items: itemDefs, damageTypes: damageTypeDefs, plugSets, socketCategories, breakerTypes, sandboxPerks, collectibles } = await loadTables();
 
   const perkIdByName = new Map();
   const perkTable = [];
+  const sourceIndex = buildSourceIndex();
 
   const weapons = Object.values(itemDefs)
     .filter((item) => item.itemType === WEAPON_ITEM_TYPE && !item.redacted && !item.blacklisted && item.displayProperties?.name)
     .map((item) => ({
       ...mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategories, breakerTypes, sandboxPerks),
       perkIds: collectWeaponPerkIds(item, itemDefs, plugSets, socketCategories, perkIdByName, perkTable),
+      sources: sourcesForItem(item, collectibles, sourceIndex),
     }));
 
   perkTableCache = perkTable.map(({ iconFromEnhanced, ...perk }) => perk);
@@ -374,6 +479,47 @@ export async function getWeapons() {
 export async function getPerks() {
   if (!perkTableCache) await getWeapons();
   return perkTableCache;
+}
+
+// Search vocabulary for source: and season:, with how many listed weapons each one covers.
+export async function getFilters() {
+  const weapons = await getWeapons();
+  const { seasons: seasonDefs } = await loadTables();
+
+  const sourceCounts = new Map();
+  const seasonCounts = new Map();
+  for (const w of weapons) {
+    for (const s of w.sources) sourceCounts.set(s, (sourceCounts.get(s) ?? 0) + 1);
+    if (w.season != null) seasonCounts.set(w.season, (seasonCounts.get(w.season) ?? 0) + 1);
+  }
+
+  const sources = Object.entries(dimSourcesCache ?? {})
+    .map(([key, info]) => ({ key, aliases: info.aliases, count: sourceCounts.get(key) ?? 0 }))
+    .filter((s) => s.count > 0)
+    .sort((a, b) => a.key.localeCompare(b.key));
+
+  const bungieNames = new Map(
+    Object.values(seasonDefs).filter((s) => s.seasonNumber != null).map((s) => [s.seasonNumber, s.displayProperties?.name?.trim()])
+  );
+  const dimTags = new Map();
+  for (const [tag, number] of Object.entries(seasonTagsCache ?? {})) {
+    if (number > LAST_DIM_TAGGED_SEASON) continue;
+    if (!dimTags.has(number)) dimTags.set(number, []);
+    dimTags.get(number).push(tag);
+  }
+
+  const numbers = new Set([...bungieNames.keys(), ...Object.keys(SEASON_OVERRIDES).map(Number)]);
+  const seasons = [...numbers]
+    .filter((n) => n <= LAST_DIM_TAGGED_SEASON || SEASON_OVERRIDES[n])
+    .map((n) => {
+      const override = SEASON_OVERRIDES[n];
+      const name = override?.name ?? bungieNames.get(n) ?? `Season ${n}`;
+      const tags = [...new Set([...(dimTags.get(n) ?? []), ...(override?.tags ?? [])])];
+      return { number: n, name, tags, count: seasonCounts.get(n) ?? 0 };
+    })
+    .sort((a, b) => b.number - a.number);
+
+  return { sources, seasons };
 }
 
 // Piecewise-linear interpolation per Bungie's DestinyStatGroupDefinition contract:

@@ -70,6 +70,7 @@ function ListRow({ w }) {
 export default function WeaponList() {
   const [weapons, setWeapons] = useState([]);
   const [perks, setPerks] = useState([]);
+  const [filters, setFilters] = useState({ sources: [], seasons: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -97,16 +98,17 @@ export default function WeaponList() {
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         return res.json();
       });
-    Promise.all([getJson("/api/weapons"), getJson("/api/perks")])
-      .then(([weaponData, perkData]) => {
+    Promise.all([getJson("/api/weapons"), getJson("/api/perks"), getJson("/api/filters")])
+      .then(([weaponData, perkData, filterData]) => {
         setWeapons(weaponData.results);
         setPerks(perkData.results);
+        setFilters(filterData);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const suggestionContext = useMemo(() => buildSuggestionContext(weapons, perks), [weapons, perks]);
+  const suggestionContext = useMemo(() => buildSuggestionContext(weapons, perks, filters), [weapons, perks, filters]);
 
   function changeView(mode) {
     setViewMode(mode);
@@ -117,13 +119,13 @@ export default function WeaponList() {
     }
   }
 
-  const filtered = useMemo(() => filterWeapons(weapons, tokens, perks), [weapons, tokens, perks]);
+  const filtered = useMemo(() => filterWeapons(weapons, tokens, { perks, filters }), [weapons, tokens, perks, filters]);
 
   return (
     <div className="page">
       <header className="page-header">
         <h1>Destiny Weapon Report</h1>
-        <p>Search Destiny 2 weapons by name, perk, damage type, weapon type, frame, season and more.</p>
+        <p>Search Destiny 2 weapons by name, perk, damage type, weapon type, frame, source, season and more.</p>
       </header>
 
       <div className="filters">

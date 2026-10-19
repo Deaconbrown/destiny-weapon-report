@@ -1,7 +1,16 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { ensureManifestCache, ensureSeasonData, ensureClarityData, getWeapons, getWeaponDetail, getPerks } from "./bungie.js";
+import {
+  ensureManifestCache,
+  ensureSeasonData,
+  ensureSourceData,
+  ensureClarityData,
+  getWeapons,
+  getWeaponDetail,
+  getPerks,
+  getFilters,
+} from "./bungie.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -48,6 +57,15 @@ app.get("/api/perks", async (req, res) => {
   }
 });
 
+app.get("/api/filters", async (req, res) => {
+  try {
+    res.json(await getFilters());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load filters" });
+  }
+});
+
 app.get("/api/weapons/:hash", async (req, res) => {
   try {
     const hash = Number(req.params.hash);
@@ -73,6 +91,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 async function start() {
   await ensureManifestCache(API_KEY);
   await ensureSeasonData();
+  await ensureSourceData();
   await ensureClarityData();
   app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 }
