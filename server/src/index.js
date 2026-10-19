@@ -11,6 +11,7 @@ import {
   getPerks,
   getFilters,
 } from "./bungie.js";
+import { getCutout } from "./cutout.js";
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.BUNGIE_API_KEY;
@@ -63,6 +64,23 @@ app.get("/api/filters", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load filters" });
+  }
+});
+
+// The weapon cut out of Bungie's backdrop (WebP), or 404 when the page should show the
+// original screenshot instead (glowing weapons, or the cut-out failed).
+app.get("/api/picture/:hash", async (req, res) => {
+  const hash = Number(req.params.hash);
+  if (!Number.isInteger(hash)) return res.status(400).json({ error: "Invalid weapon hash" });
+  try {
+    const weapon = await getWeaponDetail(hash);
+    if (!weapon?.screenshot) return res.status(404).json({ useOriginal: true });
+    const cutout = await getCutout(hash, weapon.screenshot);
+    if (cutout.useOriginal) return res.status(404).json({ useOriginal: true, glowScore: cutout.glowScore });
+    res.set("Cache-Control", "public, max-age=86400").type("image/webp").sendFile(cutout.file);
+  } catch (err) {
+    console.error(`Cut-out failed for ${hash}:`, err.message);
+    res.status(404).json({ useOriginal: true });
   }
 });
 

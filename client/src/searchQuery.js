@@ -107,8 +107,12 @@ function perkIdsFor(value, perks) {
 function tokenPredicate(token, data) {
   const v = norm(token.value);
   switch (token.key) {
-    case "name":
-      return (w) => norm(w.name).includes(v);
+    case "name": {
+      // Name ignores punctuation ("crimils" finds Crimil's Dagger); flavour text is matched as
+      // typed so words don't run together across spaces.
+      const typed = token.value.toLowerCase();
+      return (w) => norm(w.name).includes(v) || (w.flavorText ?? "").toLowerCase().includes(typed);
+    }
     case "perk": {
       const ids = perkIdsFor(token.value, data.perks);
       return (w) => w.perkIds.some((id) => ids.has(id));
@@ -154,7 +158,11 @@ export function filterWeapons(weapons, tokens, data) {
 // Values offered for each key, built once from the loaded data.
 export function buildSuggestionContext(weapons, perks, filters) {
   const unique = (pick) => [...new Set(weapons.map(pick).filter(Boolean))].sort();
+  // One entry per weapon name, using the newest copy's icon (the list is newest first).
+  const names = new Map();
+  for (const w of weapons) if (!names.has(w.name)) names.set(w.name, { name: w.name, icon: w.icon });
   return {
+    names: [...names.values()].sort((a, b) => a.name.localeCompare(b.name)),
     perks: [...perks].sort((a, b) => a.name.localeCompare(b.name)),
     types: unique((w) => w.itemTypeDisplayName),
     frames: unique((w) => w.frameName),
@@ -278,9 +286,14 @@ export function getSuggestions(text, ctx) {
     ...valueSuggestions("frame", trimmed, ctx),
   ].filter((s) => !exactLabels.has(s.label));
 
+  const weaponHits = rankByMatch(ctx.names, needle, (n) => n.name)
+    .slice(0, 5)
+    .map((n) => ({ token: { key: "name", value: n.name.toLowerCase() }, label: n.name, hint: "weapon", icon: n.icon }));
+
   return [
     ...exactHits,
-    { token: { key: "name", value: trimmed.trim().toLowerCase() }, label: `name contains "${trimmed.trim()}"`, hint: "weapon name" },
+    { token: { key: "name", value: trimmed.trim().toLowerCase() }, label: `name or flavour contains "${trimmed.trim()}"`, hint: "text search" },
+    ...weaponHits,
     ...keyHits,
     ...valueHits,
   ].slice(0, MAX_SUGGESTIONS);

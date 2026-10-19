@@ -2,8 +2,14 @@ import { useMemo, useRef, useState } from "react";
 import { chipLabel, formatToken, getSuggestions, parseQuery } from "./searchQuery.js";
 
 // A single text box where each filter becomes a removable chip (perk:discord, is:strand, ...).
-export default function SearchBar({ tokens, onChange, context }) {
-  const [text, setText] = useState("");
+export default function SearchBar({ tokens, onChange, context, onTextChange }) {
+  const [text, setTextState] = useState("");
+
+  // The page also filters live on the text being typed, so keep it informed.
+  function setText(value) {
+    setTextState(value);
+    onTextChange?.(value);
+  }
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef(null);

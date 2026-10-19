@@ -366,7 +366,8 @@ function mapItemDefinition(item, itemDefs, damageTypeDefs, socketCategoryDefs, b
     isWeapon: item.itemType === WEAPON_ITEM_TYPE,
     season: seasonForItem(item),
     seasonIcon: iconUrl(item.iconWatermark ?? item.iconWatermarkShelved),
-    tierStars: isTieredWeapon(item, itemDefs) ? 5 : null,
+    // Exotics always count as tier 5; Legendaries only from the tier system onwards.
+    tierStars: isTieredWeapon(item, itemDefs) || item.inventory?.tierTypeName === "Exotic" ? 5 : null,
   };
 }
 
@@ -415,13 +416,13 @@ function collectWeaponPerkIds(item, itemDefs, plugSets, socketCategoryDefs, perk
   return [...ids];
 }
 
-// The manifest carries hidden copies of some weapons (same name, season and watermark;
-// usually no collectible). Keep one per group, preferring the collectible copy, but let it
-// search on every copy's perks so no rollable perk drops out of perk search.
+// The manifest carries hidden copies of some weapons (same name and season; usually no
+// collectible, sometimes an event watermark). Keep one per group, preferring the collectible
+// copy, but let it search on every copy's perks so no rollable perk drops out of perk search.
 function dedupeWeapons(weapons, itemDefs) {
   const groups = new Map();
   for (const w of weapons) {
-    const key = `${w.name}|${w.season ?? ""}|${w.seasonIcon ?? ""}`;
+    const key = `${w.name}|${w.season ?? ""}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(w);
   }
@@ -442,13 +443,27 @@ function dedupeWeapons(weapons, itemDefs) {
   });
 }
 
-// Fixed list order: newest season first, then A-Z; unknown seasons last.
+// Fixed list order: newest season first; within a season, brand-new weapons first, then
+// reissues grouped by the season the weapon first came out (newest first); then Exotics
+// before the rest; then A-Z. Unknown seasons last.
 function sortBySeason(weapons) {
+  const originalSeason = new Map();
+  for (const w of weapons) {
+    if (w.season == null) continue;
+    const seen = originalSeason.get(w.name);
+    if (seen == null || w.season < seen) originalSeason.set(w.name, w.season);
+  }
+
   return [...weapons].sort((a, b) => {
     if (a.season == null || b.season == null) {
       if (a.season !== b.season) return a.season == null ? 1 : -1;
     } else if (a.season !== b.season) {
       return b.season - a.season;
+    } else {
+      const byOriginal = (originalSeason.get(b.name) ?? 0) - (originalSeason.get(a.name) ?? 0);
+      if (byOriginal !== 0) return byOriginal;
+      const byExotic = Number(b.tierType === "Exotic") - Number(a.tierType === "Exotic");
+      if (byExotic !== 0) return byExotic;
     }
     return a.name.localeCompare(b.name);
   });
@@ -690,6 +705,19 @@ function resolveSelections(sockets, selectedHashes) {
   return { resolvedColumns, statDeltas };
 }
 
+// The masterwork socket offers every stat in the game; keep only the stats this weapon has.
+function limitMasterworksToWeaponStats(sockets, stats) {
+  const statNames = new Set([...stats.bars, ...stats.info].map((s) => s.name));
+  return sockets.map((category) => ({
+    ...category,
+    columns: category.columns.map((col) => {
+      if (!col.options.every((o) => o.name.startsWith("Masterworked:"))) return col;
+      const kept = col.options.filter((o) => statNames.has(o.name.replace("Masterworked:", "").trim()));
+      return kept.length > 0 ? { ...col, options: kept } : col;
+    }),
+  }));
+}
+
 export async function getWeaponDetail(hash, selectedHashes = []) {
   const { items: itemDefs, damageTypes, statDefs, statGroupDefs, plugSets, socketCategories, breakerTypes, sandboxPerks } = await loadTables();
 
@@ -705,9 +733,10 @@ export async function getWeaponDetail(hash, selectedHashes = []) {
     columns: category.columns.map((col) => ({ ...col, activeHash: activeHashByIndex.get(col.index) })),
   }));
 
+  const stats = buildStats(item, statDefs, statGroupDefs, statDeltas);
   return {
     ...mapItemDefinition(item, itemDefs, damageTypes, socketCategories, breakerTypes, sandboxPerks),
-    stats: buildStats(item, statDefs, statGroupDefs, statDeltas),
-    sockets: socketsWithSelection,
+    stats,
+    sockets: limitMasterworksToWeaponStats(socketsWithSelection, stats),
   };
 }

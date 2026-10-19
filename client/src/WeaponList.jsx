@@ -9,10 +9,15 @@ import { buildSuggestionContext, filterWeapons, formatQuery, parseQuery } from "
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
-function GridCard({ w }) {
+// Weapon links carry the current search so the weapon page can list the same results.
+function weaponLink(w, search) {
+  return `/weapon/${w.hash}/${slugify(w.name)}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
+}
+
+function GridCard({ w, search }) {
   const tint = tierColor(w.tierType);
   return (
-    <Link className="weapon-card" style={{ borderColor: tint }} to={`/weapon/${w.hash}/${slugify(w.name)}`}>
+    <Link className="weapon-card" style={{ borderColor: tint }} to={weaponLink(w, search)}>
       <div className="card-icon-square" style={{ backgroundColor: `${tint}26` }}>
         {w.icon && <img src={w.icon} alt={w.name} loading="lazy" />}
         <div className="card-badges">
@@ -38,9 +43,9 @@ function GridCard({ w }) {
   );
 }
 
-function ListRow({ w }) {
+function ListRow({ w, search }) {
   return (
-    <Link className="weapon-row" to={`/weapon/${w.hash}/${slugify(w.name)}`}>
+    <Link className="weapon-row" to={weaponLink(w, search)}>
       <span className="row-damage">
         {w.damageTypeIcon && <img className="damage-icon" src={w.damageTypeIcon} alt={w.damageType ?? ""} title={w.damageType ?? ""} />}
       </span>
@@ -55,7 +60,7 @@ function ListRow({ w }) {
       </span>
       <span className="row-name">{w.name}</span>
       <span className="row-type">
-        <WeaponTypeIcon type={w.itemTypeDisplayName} className="row-type-icon" />
+        <WeaponTypeIcon type={w.itemTypeDisplayName} className="row-type-icon" size={32} />
         {w.itemTypeDisplayName}
       </span>
       <span className="row-frame">
@@ -74,6 +79,7 @@ export default function WeaponList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [liveText, setLiveText] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
       return localStorage.getItem("dwr-view-mode") ?? "grid";
@@ -119,7 +125,15 @@ export default function WeaponList() {
     }
   }
 
-  const filtered = useMemo(() => filterWeapons(weapons, tokens, { perks, filters }), [weapons, tokens, perks, filters]);
+  // Plain text still being typed filters the list live, on top of the chips; key:value text
+  // waits until it becomes a chip.
+  const activeTokens = useMemo(() => {
+    const typed = liveText.trim().toLowerCase();
+    return typed && !typed.includes(":") ? [...tokens, { key: "name", value: typed }] : tokens;
+  }, [tokens, liveText]);
+
+  const activeQuery = formatQuery(activeTokens);
+  const filtered = useMemo(() => filterWeapons(weapons, activeTokens, { perks, filters }), [weapons, activeTokens, perks, filters]);
 
   return (
     <div className="page">
@@ -129,7 +143,7 @@ export default function WeaponList() {
       </header>
 
       <div className="filters">
-        <SearchBar tokens={tokens} onChange={changeTokens} context={suggestionContext} />
+        <SearchBar tokens={tokens} onChange={changeTokens} context={suggestionContext} onTextChange={setLiveText} />
         <div className="view-toggle">
           <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => changeView("grid")}>Grid</button>
           <button type="button" className={viewMode === "list" ? "active" : ""} onClick={() => changeView("list")}>List</button>
@@ -140,14 +154,14 @@ export default function WeaponList() {
       {error && <p className="status error">Error: {error}</p>}
       {!loading && !error && (
         <>
-          <p className="result-count">{tokens.length > 0 ? `${filtered.length} matches` : `${filtered.length} weapons`}</p>
+          <p className="result-count">{activeTokens.length > 0 ? `${filtered.length} matches` : `${filtered.length} weapons`}</p>
           {viewMode === "grid" ? (
             <div className="weapon-grid">
-              {filtered.map((w) => <GridCard w={w} key={w.hash} />)}
+              {filtered.map((w) => <GridCard w={w} search={activeQuery} key={w.hash} />)}
             </div>
           ) : (
             <div className="weapon-list">
-              {filtered.map((w) => <ListRow w={w} key={w.hash} />)}
+              {filtered.map((w) => <ListRow w={w} search={activeQuery} key={w.hash} />)}
             </div>
           )}
         </>
